@@ -1,6 +1,6 @@
 # PRD — magpie-lite: multi-account login vault, switcher and allowance monitor for Claude Code, Codex CLI and Antigravity CLI
 
-**Source scope**: task summary + decisions settled in conversation on 2026-10-16 (two clarification rounds); reference research digest (magpie, claude-swap, aisw, CodexBar, codex-account-switcher, AntigravityManager)
+**Source scope**: task summary + decisions settled in conversation on 2026-10-16 (two clarification rounds; amended the same day: saved-login storage, refresh interval, system-wide switch); reference research digest (magpie, claude-swap, aisw, CodexBar, codex-account-switcher, AntigravityManager)
 **Requirement ledger**: none — no source requirements document
 **Operating envelope** (source: deployment in hand — the owner's own Mac; other fields unstated): horizon unstated · accounts: one local user holding 3–5 saved accounts per tool today (source: owner), i.e. up to ~15 accounts · largest entity at horizon: ~15 saved accounts · peak rate on hot path: bounded by vendor allowance endpoints, ~30 requests/hour per Claude identity (source: claude-swap poll policy) · maintainers: 1 · platform: single Mac, macOS 26 on Apple Silicon, personal build (no store distribution)
 **Status**: implementation-ready
@@ -26,7 +26,7 @@ A native macOS menubar app. The menubar shows an icon followed by a short allowa
 ## Behavioral decisions
 - **Adding accounts:** an account is added only by saving a tool's current live login. To add another account the owner signs in with the tool itself, without signing out first, then saves it in the app. The app runs no sign-in flow of its own.
 - **Tools in scope:** Claude Code, Codex CLI, Antigravity CLI (`agy`). Each tool has at most one live account at a time; any number of saved accounts.
-- **Switch = in-place swap of the tool's live login.** Only authentication state changes: the tool's credential, its identity metadata (Claude), and for `agy` the provider selection that makes it use the account login. The tool's settings, history, sessions, MCP configuration and other files are left byte-identical.
+- **Switch = in-place, system-wide swap of the tool's live login.** Every new session of the tool on this Mac uses the new account. Only authentication state changes: the tool's credential, its identity metadata (Claude), and for `agy` the provider selection that makes it use the account login. The tool's settings, history, sessions, MCP configuration and other files are left byte-identical.
 - **Sync-back before switch-away.** Immediately before a switch, the app re-reads the tool's live login and, when its identity matches a saved account, updates that saved copy (the tool may have renewed its tokens). A live login with no saved match is kept aside before it is replaced, never discarded.
 - **Switch is all-or-nothing.** If any write fails, the tool's live login is restored to its exact pre-switch state and the switch reports failure. Switching to the account already live is a no-op.
 - **Read failures are "unknown", never "empty".** If the app cannot read a tool's live login (denied, unreadable, unsupported storage mode), switching for that tool is refused and nothing is written.
@@ -35,11 +35,12 @@ A native macOS menubar app. The menubar shows an icon followed by a short allowa
 - **Allowance.** Shown per account as remaining percentage and reset time for the 5-hour window and the 7-day window. Windows are identified by their duration, not their position in the vendor response; a window the vendor does not return displays as "—". `agy` reports two model groups (Gemini; Claude and GPT), each with its own 5-hour and weekly window; both are shown.
 - **Menubar text:** after the icon, the live account's 5-hour and 7-day remaining per tool, in the form `C 62/40 · X 80/71 · G 45/90` (Claude, Codex, `agy`). A missing window shows `—`; a tool with no live login is omitted. For `agy`, each window shows the lower remaining of its two model groups.
 - **Launch at login:** a toggle in the management window registers the app as a login item; off by default.
-- **Freshness.** Allowance is fetched in the background at a cadence that respects each vendor's rate limits, and on demand via a refresh action. On a failed fetch the last good reading stays visible, marked stale with its age.
+- **Refresh interval:** a 3 / 5 / 10-minute choice in the management window; the choice persists across app restarts.
+- **Freshness.** Allowance is fetched automatically every 3, 5 or 10 minutes (owner's choice in the management window, default 5), and on demand via a refresh action. A vendor's rate-limit response postpones that vendor's next fetch beyond the chosen interval. On a failed fetch the last good reading stays visible, marked stale with its age.
 - **Live account allowance.** Uses the tool's current access token, read-only. If that token has expired, the last reading stays visible and is marked stale until the tool renews it.
 - **Needs sign-in.** When renewal of a saved account is permanently refused by the vendor, the account is marked "needs sign-in", its polling stops, and switching to it is disabled with that reason shown.
 - **Post-switch pick-up.** The app tells the owner when a running process keeps the old account: Claude Code sessions pick up the new login within about 30 seconds or on a new session; a running Codex app-server or Codex desktop app needs a restart (offered by the app); `agy` uses the new login on its next session.
-- **Secrets.** Saved logins never leave the Mac, are stored in the macOS Keychain rather than plaintext files, and never appear in the UI or logs.
+- **Secrets.** Saved logins never leave the Mac. They are stored as owner-only files (0600, in a 0700 folder in the app's Application Support directory) that are excluded from Time Machine, and they never appear in the UI or logs.
 - **Unsupported storage modes fail closed.** A Codex install configured for keyring-only or ephemeral credentials (when the app cannot read it) is shown as unsupported for switching rather than switched blindly.
 
 ## Acceptance criteria
@@ -64,7 +65,8 @@ A native macOS menubar app. The menubar shows an icon followed by a short allowa
 - [ ] Enabling launch at login makes the app start at the next login; disabling it stops that. (Req: — design)
 - [ ] Removing a saved account deletes it from the app and from the list views; the tool's live login is unchanged, including when the removed account is the live one. (Req: — design)
 - [ ] After switching Codex while a Codex app-server or Codex desktop app is running, the app shows that it still uses the old account and offers a restart. (Req: — design)
-- [ ] No token, refresh token or credential value appears in the UI, in logs, or in any file outside the macOS Keychain and the tools' own stores. (Req: — design)
+- [ ] No token, refresh token or credential value appears in the UI, in logs, or in any file outside the app's owner-only vault files and the tools' own stores; every vault file is mode 0600 inside a 0700 folder marked excluded from backup. (Req: — design)
+- [ ] Choosing 3, 5 or 10 minutes sets the automatic fetch interval, the choice survives an app restart, and the refresh action fetches immediately regardless of the interval. (Req: — design)
 
 ## Testing intent
 - **External behavior that proves it:** the tool's own CLI reports the new identity after a switch; vendor allowance values parsed into the displayed numbers; stores byte-compared before/after.
@@ -92,5 +94,6 @@ A native macOS menubar app. The menubar shows an icon followed by a short allowa
 - **Risk — Antigravity account suspension (accepted by owner):** Google may suspend an Antigravity account it sees used outside Antigravity; the app's allowance and renewal calls use Antigravity's client identity. Read-only calls, but the risk is non-zero.
 - **Risk — undocumented contracts:** all three allowance endpoints and the `agy` Keychain envelope are private vendor contracts and can change without notice; parsing must degrade to "unknown/stale", never crash or corrupt a store.
 - **Assumption — Google token renewal:** whether Google rotates `agy` refresh tokens on renewal is unresolved in the references; it must be verified against a real account before relying on either behavior.
+- **Amendment (2026-10-16):** saved logins moved from the macOS Keychain to owner-only files at the owner's request — avoids Keychain prompts on every rebuild of an ad-hoc-signed app; precedent: Codex's own `auth.json` and CodexBar's token store are 0600 files.
 - **Constraint:** writing another tool's Keychain item through the native Keychain API can lock that tool out of its own credential; the tool's own access path must be preserved (reference: aisw ADR 0004).
 - **Constraint:** signing out from a tool (e.g. Claude Code `/logout`) revokes that login's refresh token, which kills its saved copy; owner-facing guidance must say to sign in to the next account without signing out first.
