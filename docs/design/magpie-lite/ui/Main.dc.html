@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>magpie-lite menubar and popover</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#2F6FE0;text-decoration:none}a:hover{color:#1F55B8}
+button:focus-visible,a:focus-visible{outline:2px solid #5B9BFF;outline-offset:2px}
+</style>
+</helmet>
+<div style="width: 560px; height: 720px; box-sizing: border-box; position: relative; overflow: hidden; background: {{t.wall}}; color: {{t.text}}; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; -webkit-font-smoothing: antialiased">
+
+  <div style="height: 30px; display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 0 12px; background: {{t.bar}}; backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6); color: {{t.barText}}; font-size: 13px; font-weight: 500">
+    <div role="img" aria-label="{{menubarText}}" style="display: flex; align-items: center; gap: 10px; height: 24px; padding: 0 8px; border-radius: 6px; background: {{t.barActive}}; font-variant-numeric: tabular-nums; white-space: nowrap">
+      <sc-if value="{{noBar}}" hint-placeholder-val="{{ false }}">
+        <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true"><rect x="1" y="6" width="3" height="7" rx="1" fill="currentColor"></rect><rect x="6.5" y="3" width="3" height="10" rx="1" fill="currentColor"></rect><rect x="12" y="1" width="3" height="12" rx="1" fill="currentColor" opacity="0.5"></rect></svg>
+      </sc-if>
+      <sc-for list="{{barTools}}" as="m" hint-placeholder-count="2">
+        <div style="display: flex; align-items: center; gap: 4px" aria-hidden="true">
+          <span style="width: 14px; height: 14px; box-sizing: border-box; border-radius: 4px; border: 1.5px solid currentColor; font-size: 8.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; line-height: 1">{{m.mark}}</span>
+          <div style="display: flex; flex-direction: column; align-items: flex-end; font-size: 9.5px; font-weight: 650; line-height: 10px; letter-spacing: -0.01em">
+            <span style="color: {{m.c5}}">{{m.s5}}</span>
+            <span style="color: {{m.c7}}">{{m.s7}}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="width: 18px; height: 12px; border-radius: 3px; border: 1.5px solid {{t.barText}}; opacity: 0.35" aria-hidden="true"></div>
+  </div>
+
+  <div style="position: absolute; top: 38px; right: 52px; width: 392px; box-sizing: border-box; border-radius: 18px; background: {{t.pop}}; border: 1px solid {{t.popBorder}}; box-shadow: {{t.shadow}}; backdrop-filter: blur(40px) saturate(1.8); -webkit-backdrop-filter: blur(40px) saturate(1.8); padding-bottom: 6px">
+
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 10px 16px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 15px; font-weight: 650; letter-spacing: -0.01em">Allowance</span>
+        <span style="font-size: 11.5px; color: {{t.sub}}">{{updatedText}}</span>
+      </div>
+      <div style="display: flex; gap: 6px">
+        <button onClick="{{refreshLive}}" aria-label="Refresh live accounts" title="Refresh live accounts" style="width: 30px; height: 30px; border-radius: 9px; border: none; background: {{t.btn}}; color: {{t.btnText}}; display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"></path><path d="M21 4v5h-5"></path></svg>
+        </button>
+        <a href="Manager.dc.html" aria-label="Open manager window" title="Open manager window" style="width: 30px; height: 30px; border-radius: 9px; background: {{t.btn}}; color: {{t.btnText}}; display: flex; align-items: center; justify-content: center">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M3 9h18"></path><path d="M6.5 6.5h.01M9 6.5h.01"></path></svg>
+        </a>
+      </div>
+    </div>
+
+    <sc-if value="{{hasNotice}}" hint-placeholder-val="{{ false }}">
+      <div style="margin: 0 10px 10px; padding: 10px 10px 10px 12px; border-radius: 12px; background: {{t.notice}}; display: flex; align-items: flex-start; gap: 10px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{t.liveText}}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 1px"><path d="M5 12l5 5 9-10"></path></svg>
+        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+          <span style="font-size: 12px; line-height: 1.4">{{noticeText}}</span>
+          <sc-if value="{{codexRestart}}" hint-placeholder-val="{{ false }}">
+            <button style="align-self: flex-start; height: 26px; padding: 0 12px; border-radius: 13px; border: none; background: {{t.ok}}; color: #FFFFFF; font-size: 12px; font-weight: 600; cursor: pointer">Restart app-server</button>
+          </sc-if>
+        </div>
+        <button aria-label="Dismiss" onClick="{{dismiss}}" style="flex: none; width: 22px; height: 22px; border-radius: 11px; border: none; background: transparent; color: {{t.sub}}; display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+        </button>
+      </div>
+    </sc-if>
+
+    <div style="max-height: 470px; overflow-y: auto">
+      <sc-for list="{{tools}}" as="tool" hint-placeholder-count="3">
+        <section style="margin: 0 10px 8px; border-radius: 14px; background: {{t.card}}; border: 1px solid {{t.hair}}; overflow: hidden">
+
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px 6px">
+            <span style="width: 18px; height: 18px; border-radius: 5px; background: {{tool.accent}}; color: #FFFFFF; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{tool.mark}}</span>
+            <span style="font-size: 12.5px; font-weight: 650">{{tool.name}}</span>
+            <button onClick="{{tool.toggle}}" aria-expanded="{{tool.expAria}}" aria-label="{{tool.expLabel}}" style="margin-left: auto; height: 22px; padding: 0 6px 0 8px; border: none; border-radius: 11px; background: transparent; color: {{t.sub}}; font-family: inherit; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px; cursor: pointer">{{tool.count}}<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="transform: {{tool.rotate}}"><path d="M6 9l6 6 6-6"></path></svg></button>
+          </div>
+
+          <sc-for list="{{tool.accounts}}" as="a" hint-placeholder-count="1">
+            <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-top: 1px solid {{t.hair}}; background: {{a.bg}}">
+
+              <div style="display: flex; align-items: center; gap: 6px; min-height: 22px; min-width: 0">
+                <span style="font-size: 12px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0">{{a.email}}</span>
+                <span style="flex: none; height: 16px; padding: 0 5px; border-radius: 4px; background: {{t.chip}}; color: {{t.sub}}; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; white-space: nowrap">{{a.plan}}</span>
+                <div style="flex: none; margin-left: auto; display: flex; align-items: center; gap: 6px">
+                  <sc-if value="{{a.stale}}" hint-placeholder-val="{{ false }}">
+                    <span style="display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; color: {{t.ter}}; white-space: nowrap">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>{{a.staleText}}
+                    </span>
+                  </sc-if>
+                  <sc-if value="{{a.dead}}" hint-placeholder-val="{{ false }}">
+                    <span style="display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 7px; border-radius: 9px; background: {{t.deadBg}}; color: {{t.deadText}}; font-size: 10.5px; font-weight: 650; white-space: nowrap">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v4"></path></svg>Needs sign-in
+                    </span>
+                  </sc-if>
+                  <sc-if value="{{a.live}}" hint-placeholder-val="{{ true }}">
+                    <span style="display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 11px; background: {{t.liveBg}}; color: {{t.liveText}}; font-size: 11px; font-weight: 650">
+                      <span style="width: 6px; height: 6px; border-radius: 3px; background: {{t.liveText}}"></span>Live
+                    </span>
+                  </sc-if>
+                  <sc-if value="{{a.notLive}}" hint-placeholder-val="{{ false }}">
+                    <button onClick="{{a.pick}}" disabled="{{a.dead}}" aria-label="{{a.switchLabel}}" style="height: 22px; padding: 0 10px; border-radius: 11px; border: none; background: {{t.btn}}; color: {{t.btnText}}; font-size: 11.5px; font-weight: 600; cursor: pointer; opacity: {{a.btnOpacity}}">Switch</button>
+                  </sc-if>
+                  <button onClick="{{a.refresh}}" aria-label="{{a.refreshLabel}}" title="Refresh this account" style="width: 22px; height: 22px; border-radius: 11px; border: none; background: transparent; color: {{t.sub}}; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"></path><path d="M21 4v5h-5"></path></svg>
+                  </button>
+                </div>
+              </div>
+
+              <sc-if value="{{a.ok}}" hint-placeholder-val="{{ true }}">
+                <div style="display: flex; flex-direction: column; gap: 6px; opacity: {{a.opacity}}">
+                  <sc-for list="{{a.groups}}" as="g" hint-placeholder-count="1">
+                    <div style="display: grid; grid-template-columns: {{g.cols}}; gap: 12px; align-items: end">
+                      <sc-if value="{{g.named}}" hint-placeholder-val="{{ false }}">
+                        <span style="font-size: 10.5px; font-weight: 600; color: {{t.sub}}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.2">{{g.name}}</span>
+                      </sc-if>
+                      <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0">
+                        <div style="display: flex; align-items: baseline; gap: 5px; font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap">
+                          <span style="color: {{t.sub}}; font-weight: 600">5h</span>
+                          <span style="font-size: 12px; font-weight: 650">{{g.w5.label}}</span>
+                          <span style="margin-left: auto; color: {{t.ter}}; overflow: hidden; text-overflow: ellipsis; min-width: 0">{{g.w5.reset}}</span>
+                        </div>
+                        <div style="height: 4px; border-radius: 2px; background: {{t.track}}; overflow: hidden">
+                          <div style="height: 100%; width: {{g.w5.pct}}; border-radius: 2px; background: {{g.w5.color}}"></div>
+                        </div>
+                      </div>
+                      <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0">
+                        <div style="display: flex; align-items: baseline; gap: 5px; font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap">
+                          <span style="color: {{t.sub}}; font-weight: 600">7d</span>
+                          <span style="font-size: 12px; font-weight: 650">{{g.w7.label}}</span>
+                          <span style="margin-left: auto; color: {{t.ter}}; overflow: hidden; text-overflow: ellipsis; min-width: 0">{{g.w7.reset}}</span>
+                        </div>
+                        <div style="height: 4px; border-radius: 2px; background: {{t.track}}; overflow: hidden">
+                          <div style="height: 100%; width: {{g.w7.pct}}; border-radius: 2px; background: {{g.w7.color}}"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <sc-if value="{{a.suggest}}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 9px; border-radius: 9px; background: {{t.warnBg}}; color: {{t.warnText}}">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M12 3l10 18H2z"></path><path d="M12 10v4"></path><path d="M12 17.5h.01"></path></svg>
+                  <span style="flex: 1; min-width: 0; font-size: 11.5px; line-height: 1.35">{{a.suggestText}}</span>
+                  <button onClick="{{a.suggestPick}}" aria-label="{{a.suggestLabel}}" style="flex: none; height: 22px; padding: 0 10px; border-radius: 11px; border: none; background: {{t.ok}}; color: #FFFFFF; font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer">Switch</button>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </section>
+      </sc-for>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 16px 8px; font-size: 12px">
+      <a href="Manager.dc.html" style="font-weight: 600; color: {{t.link}}">Manage accounts…</a>
+      <button style="border: none; background: transparent; color: {{t.sub}}; font-size: 12px; cursor: pointer; padding: 4px 0">Quit</button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":560,"height":720}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { live: { claude: 'work@example.com', codex: 'work@example.com', agy: 'me@example.com' }, last: null, more: {}, bar: { claude: true, codex: true, agy: false } };
+  }
+  renderVals() {
+    const dark = this.props.dark ?? false;
+    const t = dark ? {
+      wall: '#14171D', bar: 'rgba(30,30,32,0.74)', barText: '#F5F5F7', barActive: 'rgba(255,255,255,0.16)',
+      pop: 'rgba(40,40,44,0.86)', popBorder: 'rgba(255,255,255,0.12)', shadow: '0 24px 64px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.3)',
+      text: '#F5F5F7', sub: '#B8B8BF', ter: '#A2A2AA', hair: 'rgba(255,255,255,0.08)', card: 'rgba(255,255,255,0.05)',
+      track: 'rgba(255,255,255,0.13)', ok: '#5B9BFF', warn: '#F0A14A', low: '#FF6B6B', chip: 'rgba(255,255,255,0.09)',
+      btn: 'rgba(255,255,255,0.11)', btnText: '#F5F5F7', liveBg: 'rgba(91,155,255,0.18)', liveText: '#A3C6FF', liveRow: 'rgba(91,155,255,0.07)',
+      notice: 'rgba(91,155,255,0.14)', deadBg: 'rgba(255,107,107,0.15)', deadText: '#FFA3A3', link: '#86B5FF', barLow: '#FF8A8A', warnBg: 'rgba(240,161,74,0.14)', warnText: '#F5C38A'
+    } : {
+      wall: '#D8DEE7', bar: 'rgba(247,247,249,0.80)', barText: '#1D1D1F', barActive: 'rgba(0,0,0,0.10)',
+      pop: 'rgba(249,249,251,0.90)', popBorder: 'rgba(0,0,0,0.10)', shadow: '0 24px 64px rgba(15,20,30,0.22), 0 2px 8px rgba(15,20,30,0.08)',
+      text: '#1D1D1F', sub: '#55555B', ter: '#6A6A70', hair: 'rgba(0,0,0,0.07)', card: 'rgba(255,255,255,0.75)',
+      track: 'rgba(0,0,0,0.09)', ok: '#2F6FE0', warn: '#D9822B', low: '#D23F3F', chip: 'rgba(0,0,0,0.06)',
+      btn: 'rgba(0,0,0,0.06)', btnText: '#1D1D1F', liveBg: 'rgba(47,111,224,0.12)', liveText: '#1F56B8', liveRow: 'rgba(47,111,224,0.05)',
+      notice: 'rgba(47,111,224,0.10)', deadBg: 'rgba(210,63,63,0.10)', deadText: '#B02E2E', link: '#2F6FE0', barLow: '#C2362F', warnBg: 'rgba(217,130,43,0.12)', warnText: '#8A4B0F'
+    };
+    const color = (v) => v == null ? t.track : v >= 40 ? t.ok : v >= 15 ? t.warn : t.low;
+    const win = (v, reset) => ({ label: v == null ? '—' : v + '%', pct: (v == null ? 0 : v) + '%', color: color(v), reset: reset });
+    const mins = (gs, k) => { const vs = gs.map((g) => g[k]).filter((v) => v != null); return vs.length ? Math.min.apply(null, vs) : null; };
+    const data = [
+      { id: 'claude', name: 'Claude Code', mark: 'C', accent: '#C96442', accounts: [
+        { email: 'work@example.com', plan: 'Max 20×', groups: [
+          { name: 'All models', l5: 62, r5: 'in 2h 14m', l7: 40, r7: 'in 6d 18h' },
+          { name: 'Fable', l5: null, r5: 'weekly only', l7: 28, r7: 'in 6d 18h' }] },
+        { email: 'personal@example.com', plan: 'Pro', groups: [
+          { name: 'All models', l5: 88, r5: 'in 4h 02m', l7: 71, r7: 'in 3d 4h' },
+          { name: 'Fable', l5: null, r5: 'weekly only', l7: 64, r7: 'in 3d 4h' }] },
+        { email: 'team@example.com', plan: 'Team · Acme', groups: [
+          { name: 'All models', l5: 100, r5: 'not started', l7: 93, r7: 'in 4d 21h' },
+          { name: 'Fable', l5: null, r5: 'weekly only', l7: 81, r7: 'in 4d 21h' }] },
+        { email: 'side@example.com', plan: 'Pro', dead: true, groups: [] }
+      ] },
+      { id: 'codex', name: 'Codex', mark: 'X', accent: '#2B8A78', accounts: [
+        { email: 'work@example.com', plan: 'Plus', groups: [{ name: '', l5: 80, r5: 'in 3h 40m', l7: 71, r7: 'in 3d 19h' }] },
+        { email: 'personal@example.com', plan: 'Pro', groups: [{ name: '', l5: null, r5: 'weekly only', l7: 54, r7: 'in 1d 16h' }] },
+        { email: 'team@example.com', plan: 'Team · Acme', groups: [{ name: '', l5: 12, r5: 'in 48m', l7: 35, r7: 'in 6d 7h' }] },
+        { email: 'old@example.com', plan: 'Plus', stale: '18 min ago', groups: [{ name: '', l5: 66, r5: 'in 1h 10m', l7: 80, r7: 'in 18h 30m' }] }
+      ] },
+      { id: 'agy', name: 'Antigravity CLI', mark: 'G', accent: '#3B74E0', accounts: [
+        { email: 'me@example.com', plan: 'Google AI Pro', groups: [
+          { name: 'Gemini', l5: 45, r5: 'in 1h 32m', l7: 90, r7: 'in 2d 17h' },
+          { name: 'Claude & GPT', l5: 30, r5: 'in 2h 05m', l7: 95, r7: 'in 2d 17h' }] },
+        { email: 'lab@example.com', plan: 'Google AI Ultra', groups: [
+          { name: 'Gemini', l5: 100, r5: 'not started', l7: 98, r7: 'in 3d 18h' },
+          { name: 'Claude & GPT', l5: 77, r5: 'in 3h 50m', l7: 91, r7: 'in 3d 18h' }] },
+        { email: 'free@example.com', plan: 'Free', groups: [
+          { name: 'Gemini', l5: null, r5: 'weekly only', l7: 64, r7: 'in 5d 20h' },
+          { name: 'Claude & GPT', l5: null, r5: 'weekly only', l7: 80, r7: 'in 5d 20h' }] }
+      ] }
+    ];
+    const st = this.state;
+    const live = st.live;
+    let backups = 0;
+    const tools = data.map((tool) => {
+      const liveAcc = tool.accounts.find((a) => a.email === live[tool.id]) || tool.accounts[0];
+      const ordered = [liveAcc].concat(tool.accounts.filter((a) => a !== liveAcc));
+      backups += ordered.length - 1;
+      const score = (a) => a.dead || a.stale || !a.groups.length ? -1 : Math.min.apply(null, a.groups.map((g) => Math.min(g.l5 == null ? 100 : g.l5, g.l7 == null ? 100 : g.l7)));
+      const liveScore = score(liveAcc);
+      const best = tool.accounts.filter((a) => a !== liveAcc).sort((x, y) => score(y) - score(x))[0];
+      const suggest = liveScore >= 0 && liveScore < 15 && !!best && score(best) >= 40;
+      const open = !!st.more[tool.id];
+      const visible = open ? ordered : [liveAcc];
+      const accounts = visible.map((a) => {
+        const isLive = a === liveAcc;
+        return {
+          email: a.email,
+          plan: a.plan,
+          live: isLive,
+          notLive: !isLive,
+          bg: isLive ? t.liveRow : 'transparent',
+          ok: !a.dead,
+          dead: !!a.dead,
+          stale: !!a.stale,
+          staleText: a.stale ? a.stale : '',
+          opacity: a.stale ? 0.7 : 1,
+          btnOpacity: a.dead ? 0.4 : 1,
+          switchLabel: 'Switch ' + tool.name + ' to ' + a.email,
+          refreshLabel: 'Refresh ' + tool.name + ' ' + a.email,
+          suggest: isLive && suggest,
+          suggestText: suggest ? 'Running low. ' + best.email + ' has ' + score(best) + '% left.' : '',
+          suggestLabel: suggest ? 'Switch ' + tool.name + ' to ' + best.email : '',
+          suggestPick: () => {
+            if (!suggest) return;
+            const next = Object.assign({}, this.state.live);
+            next[tool.id] = best.email;
+            this.setState({ live: next, last: tool.id });
+          },
+          refresh: () => this.setState({ refreshed: a.email + ' (' + tool.name + ')' }),
+          groups: a.groups.map((g) => ({
+            name: g.name,
+            named: !!g.name,
+            cols: g.name ? '70px repeat(2, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))',
+            w5: win(g.l5, g.r5),
+            w7: win(g.l7, g.r7)
+          })),
+          pick: () => {
+            if (a.dead || isLive) return;
+            const next = Object.assign({}, this.state.live);
+            next[tool.id] = a.email;
+            this.setState({ live: next, last: tool.id });
+          }
+        };
+      });
+      const ml5 = mins(liveAcc.groups, 'l5');
+      const ml7 = mins(liveAcc.groups, 'l7');
+      const fmt = (v) => v == null ? '—' : v + '%';
+      return {
+        id: tool.id,
+        name: tool.name,
+        mark: tool.mark,
+        accent: tool.accent,
+        count: open ? 'Show less' : '+' + (tool.accounts.length - 1) + ' more',
+        expAria: open ? 'true' : 'false',
+        expLabel: (open ? 'Hide other ' : 'Show other ') + tool.name + ' accounts',
+        rotate: open ? 'rotate(180deg)' : 'none',
+        toggle: () => {
+          const m = Object.assign({}, this.state.more);
+          m[tool.id] = !m[tool.id];
+          this.setState({ more: m });
+        },
+        accounts: accounts,
+        inBar: !!st.bar[tool.id],
+        s5: fmt(ml5),
+        s7: fmt(ml7),
+        c5: ml5 != null && ml5 < 15 ? t.barLow : 'inherit',
+        c7: ml7 != null && ml7 < 15 ? t.barLow : 'inherit'
+      };
+    });
+    const barTools = tools.filter((x) => x.inBar);
+    const menubarText = barTools.length ? barTools.map((x) => x.name + ' 5 h ' + x.s5 + ', 7 d ' + x.s7).join('; ') : 'magpie-lite';
+    const last = st.last;
+    const notices = {
+      claude: 'Claude Code now signs in as ' + live.claude + '. New sessions use it; running ones follow within about 30 s.',
+      codex: 'Codex now signs in as ' + live.codex + '. The running Codex app-server still uses the previous account.',
+      agy: 'Antigravity CLI now signs in as ' + live.agy + ' from its next session.'
+    };
+    return {
+      t: t,
+      tools: tools,
+      barTools: barTools,
+      noBar: barTools.length === 0,
+      menubarText: menubarText,
+      moreLabel: st.more ? 'Show less' : 'Show more · ' + backups + ' other accounts',
+      moreAria: st.more ? 'true' : 'false',
+      moreRotate: st.more ? 'rotate(180deg)' : 'none',
+      toggleMore: () => this.setState({ more: !this.state.more }),
+      updatedText: st.refreshed === 'live' ? 'Live accounts refreshed just now' : st.refreshed ? 'Refreshed ' + st.refreshed + ' just now' : 'Live updated 1 min ago · every 5 min',
+      refreshLive: () => this.setState({ refreshed: 'live' }),
+      hasNotice: !!last,
+      noticeText: last ? notices[last] : '',
+      codexRestart: last === 'codex',
+      dismiss: () => this.setState({ last: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

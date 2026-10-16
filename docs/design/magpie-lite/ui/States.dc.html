@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>magpie-lite states</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#2F6FE0;text-decoration:none}a:hover{color:#1F55B8}
+</style>
+</helmet>
+<div style="width: 1000px; height: 860px; box-sizing: border-box; padding: 40px; background: #ECEFF3; color: #1D1D1F; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; -webkit-font-smoothing: antialiased; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; align-items: start">
+
+  <div style="display: flex; flex-direction: column; gap: 14px">
+    <h2 style="margin: 0 0 4px; font-size: 13px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: #55555B">Menubar text</h2>
+
+    <sc-for list="{{bars}}" as="b" hint-placeholder-count="6">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 11.5px; color: #55555B">{{b.caption}}</span>
+        <div style="height: 30px; border-radius: 8px; background: {{b.bg}}; border: 1px solid rgba(0,0,0,0.06); display: flex; align-items: center; padding: 0 10px; gap: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; color: {{b.fg}}; opacity: {{b.opacity}}">
+          <sc-if value="{{b.none}}" hint-placeholder-val="{{ false }}">
+            <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true"><rect x="1" y="6" width="3" height="7" rx="1" fill="currentColor"></rect><rect x="6.5" y="3" width="3" height="10" rx="1" fill="currentColor"></rect><rect x="12" y="1" width="3" height="12" rx="1" fill="currentColor" opacity="0.5"></rect></svg>
+          </sc-if>
+          <sc-for list="{{b.items}}" as="m" hint-placeholder-count="3">
+            <div style="display: flex; align-items: center; gap: 4px">
+              <span style="width: 14px; height: 14px; box-sizing: border-box; border-radius: 4px; border: 1.5px solid currentColor; font-size: 8.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; line-height: 1">{{m.mark}}</span>
+              <div style="display: flex; flex-direction: column; align-items: flex-end; font-size: 9.5px; font-weight: 650; line-height: 10px; letter-spacing: -0.01em">
+                <span style="color: {{m.c5}}">{{m.s5}}</span>
+                <span style="color: {{m.c7}}">{{m.s7}}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+    <span style="font-size: 11px; color: #6A6A70; line-height: 1.4">Top line is the 5 h window, bottom line the 7 d window, for each shown provider's live account. Each provider has a "Show in menubar" switch in the manager window.</span>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 14px">
+    <h2 style="margin: 0 0 4px; font-size: 13px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: #55555B">Account rows</h2>
+
+    <div style="border-radius: 14px; background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.07); overflow: hidden">
+      <sc-for list="{{rows}}" as="a" hint-placeholder-count="7">
+        <div style="display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-top: {{a.border}}; background: {{a.bg}}">
+          <div style="display: flex; align-items: center; gap: 6px; min-height: 22px; min-width: 0">
+            <span style="font-size: 12px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0">{{a.email}}</span>
+            <span style="flex: none; height: 16px; padding: 0 5px; border-radius: 4px; background: rgba(0,0,0,0.06); color: #55555B; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; white-space: nowrap">{{a.plan}}</span>
+            <div style="flex: none; margin-left: auto; display: flex; align-items: center; gap: 6px">
+              <sc-if value="{{a.stale}}" hint-placeholder-val="{{ false }}">
+                <span style="display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; color: #6A6A70; white-space: nowrap">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>18 min ago
+                </span>
+              </sc-if>
+              <sc-if value="{{a.dead}}" hint-placeholder-val="{{ false }}">
+                <span style="display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 9px; background: rgba(210,63,63,0.10); color: #B02E2E; font-size: 10.5px; font-weight: 650; white-space: nowrap">Needs sign-in</span>
+              </sc-if>
+              <sc-if value="{{a.live}}" hint-placeholder-val="{{ false }}">
+                <span style="display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 11px; background: rgba(47,111,224,0.12); color: #1F56B8; font-size: 11px; font-weight: 650">
+                  <span style="width: 6px; height: 6px; border-radius: 3px; background: #1F56B8"></span>Live
+                </span>
+              </sc-if>
+              <sc-if value="{{a.switching}}" hint-placeholder-val="{{ false }}">
+                <span style="height: 22px; padding: 0 10px; border-radius: 11px; background: rgba(47,111,224,0.12); color: #1F56B8; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9"></path></svg>Switching
+                </span>
+              </sc-if>
+              <sc-if value="{{a.btn}}" hint-placeholder-val="{{ true }}">
+                <button disabled="{{a.dead}}" style="height: 22px; padding: 0 10px; border-radius: 11px; border: none; background: rgba(0,0,0,0.06); color: #1D1D1F; font-size: 11.5px; font-weight: 600; opacity: {{a.btnOpacity}}">Switch</button>
+              </sc-if>
+            </div>
+          </div>
+          <sc-if value="{{a.ok}}" hint-placeholder-val="{{ true }}">
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; opacity: {{a.opacity}}">
+              <sc-for list="{{a.wins}}" as="w" hint-placeholder-count="2">
+                <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0">
+                  <div style="display: flex; align-items: baseline; gap: 5px; font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap">
+                    <span style="color: #55555B; font-weight: 600">{{w.k}}</span>
+                    <span style="font-size: 12px; font-weight: 650">{{w.label}}</span>
+                    <span style="margin-left: auto; color: #6A6A70; overflow: hidden; text-overflow: ellipsis; min-width: 0">{{w.reset}}</span>
+                  </div>
+                  <div style="height: 4px; border-radius: 2px; background: rgba(0,0,0,0.09); overflow: hidden">
+                    <div style="height: 100%; width: {{w.pct}}; border-radius: 2px; background: {{w.color}}"></div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <span style="font-size: 10.5px; color: #6A6A70">{{a.caption}}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 14px">
+    <h2 style="margin: 0 0 4px; font-size: 13px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: #55555B">Notices</h2>
+
+    <div style="padding: 12px; border-radius: 12px; background: rgba(217,130,43,0.12); display: flex; flex-direction: column; gap: 10px">
+      <span style="font-size: 12px; line-height: 1.45"><b>Codex</b> is signed in as <b>new@example.com</b>, which isn't saved yet. Save it before switching away, or that login is lost.</span>
+      <div style="display: flex; gap: 8px">
+        <button style="height: 26px; padding: 0 12px; border-radius: 13px; border: none; background: #2F6FE0; color: #FFFFFF; font-size: 12px; font-weight: 600">Save login</button>
+        <button style="height: 26px; padding: 0 12px; border-radius: 13px; border: none; background: rgba(0,0,0,0.06); color: #1D1D1F; font-size: 12px; font-weight: 600">Later</button>
+      </div>
+    </div>
+
+    <div style="padding: 12px; border-radius: 12px; background: rgba(47,111,224,0.10); display: flex; flex-direction: column; gap: 10px">
+      <span style="font-size: 12px; line-height: 1.45">Codex now signs in as <b>team@example.com</b>. The running Codex app-server still uses <b>work@example.com</b>.</span>
+      <button style="align-self: flex-start; height: 26px; padding: 0 12px; border-radius: 13px; border: none; background: #2F6FE0; color: #FFFFFF; font-size: 12px; font-weight: 600">Restart app-server</button>
+    </div>
+
+    <div style="padding: 12px; border-radius: 12px; background: rgba(47,111,224,0.10)">
+      <span style="font-size: 12px; line-height: 1.45">Claude Code now signs in as <b>personal@example.com</b>. New sessions use it; running ones follow within about 30 s.</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-radius: 12px; background: rgba(217,130,43,0.12); color: #8A4B0F">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M12 3l10 18H2z"></path><path d="M12 10v4"></path><path d="M12 17.5h.01"></path></svg>
+      <span style="flex: 1; min-width: 0; font-size: 12px; line-height: 1.4">Running low. <b>work@example.com</b> has 71% left.</span>
+      <button style="flex: none; height: 24px; padding: 0 10px; border-radius: 12px; border: none; background: #2F6FE0; color: #FFFFFF; font-size: 12px; font-weight: 600">Switch</button>
+    </div>
+    <span style="margin-top: -8px; font-size: 10.5px; color: #6A6A70">Inline on the live row when any window drops under 15 % and a backup has 40 %+</span>
+
+    <div style="padding: 12px; border-radius: 12px; background: rgba(210,63,63,0.10); display: flex; flex-direction: column; gap: 6px">
+      <span style="font-size: 12px; font-weight: 650; color: #B02E2E">Switch failed — nothing changed</span>
+      <span style="font-size: 12px; line-height: 1.45">Couldn't write Antigravity CLI's login. Its previous login was restored.</span>
+    </div>
+
+    <div style="padding: 12px; border-radius: 12px; background: rgba(0,0,0,0.05)">
+      <span style="font-size: 12px; line-height: 1.45">Claude Code's login can't be read right now, so switching Claude Code is paused. Nothing was written.</span>
+    </div>
+
+    <div style="padding: 12px; border-radius: 12px; background: rgba(0,0,0,0.05)">
+      <span style="font-size: 12px; line-height: 1.45">Claude allowance is rate-limited by the vendor; the next check is at 14:50. Readings shown are from 14:32.</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1000,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const lowBar = '#C2362F';
+    const mi = (mark, v5, v7, low) => ({
+      mark: mark,
+      s5: v5 == null ? '—' : v5 + '%',
+      s7: v7 == null ? '—' : v7 + '%',
+      c5: v5 != null && v5 < 15 ? low : 'inherit',
+      c7: v7 != null && v7 < 15 ? low : 'inherit'
+    });
+    const light = { bg: 'rgba(247,247,249,0.95)', fg: '#1D1D1F', opacity: 1, none: false };
+    const bar = (caption, items, o) => Object.assign({ caption: caption, items: items }, light, o || {});
+    const bars = [
+      bar('All providers shown — live 5 h over 7 d', [mi('C', 62, 40, lowBar), mi('X', 80, 71, lowBar), mi('G', 30, 90, lowBar)]),
+      bar('Some shown — only providers switched on in the manager', [mi('C', 62, 40, lowBar)]),
+      bar('None shown — app icon only', [], { none: true }),
+      bar('Low window — value under 15 % turns red', [mi('C', 62, 40, lowBar), mi('X', 12, 35, lowBar), mi('G', 30, 90, lowBar)]),
+      bar('Stale — last good reading, dimmed', [mi('C', 62, 40, lowBar), mi('X', 80, 71, lowBar), mi('G', 30, 90, lowBar)], { fg: '#6A6A70', opacity: 0.7 }),
+      bar('A tool has no live login — omitted', [mi('C', 62, 40, lowBar), mi('X', 80, 71, lowBar)]),
+      bar('Weekly-only plan — missing window shows a dash', [mi('C', 62, 40, lowBar), mi('X', null, 54, lowBar), mi('G', 30, 90, lowBar)]),
+      bar('Dark menubar', [mi('C', 62, 40, '#FF8A8A'), mi('X', 80, 71, '#FF8A8A'), mi('G', 30, 90, '#FF8A8A')], { bg: '#1F1F22', fg: '#F5F5F7' })
+    ];
+    const col = (v) => v == null ? 'rgba(0,0,0,0.09)' : v >= 40 ? '#2F6FE0' : v >= 15 ? '#D9822B' : '#D23F3F';
+    const w = (k, v, reset) => ({ k: k, label: v == null ? '—' : v + '%', pct: (v == null ? 0 : v) + '%', color: col(v), reset: reset });
+    const row = (o, i) => Object.assign({
+      live: false, btn: true, dead: false, stale: false, switching: false, ok: true, opacity: 1, btnOpacity: 1, bg: 'transparent',
+      border: i === 0 ? 'none' : '1px solid rgba(0,0,0,0.07)'
+    }, o);
+    const rows = [
+      { email: 'work@example.com', plan: 'Max 20×', live: true, btn: false, bg: 'rgba(47,111,224,0.05)', wins: [w('5h', 62, 'in 2h 14m'), w('7d', 40, 'in 6d 18h')], caption: 'Live — same row, tinted, Live pill instead of Switch' },
+      { email: 'personal@example.com', plan: 'Pro', wins: [w('5h', 88, 'in 4h 02m'), w('7d', 71, 'in 3d 4h')], caption: 'Ready' },
+      { email: 'team@example.com', plan: 'Team · Acme', wins: [w('5h', 12, 'in 48m'), w('7d', 35, 'in 6d 7h')], caption: 'Low — red under 15 %, orange under 40 %' },
+      { email: 'personal@example.com', plan: 'Pro', wins: [w('5h', null, 'weekly only'), w('7d', 54, 'in 1d 16h')], caption: 'Weekly limit only' },
+      { email: 'old@example.com', plan: 'Plus', stale: true, opacity: 0.7, wins: [w('5h', 66, 'in 1h 10m'), w('7d', 80, 'in 18h 30m')], caption: 'Stale — fetch failed, last good reading kept' },
+      { email: 'side@example.com', plan: 'Pro', dead: true, ok: false, btnOpacity: 0.4, wins: [], caption: 'Renewal refused — sign in with the tool, then Save' },
+      { email: 'lab@example.com', plan: 'Google AI Ultra', btn: false, switching: true, wins: [w('5h', 100, 'not started'), w('7d', 98, 'in 3d 18h')], caption: 'Switching in progress' }
+    ].map(row);
+    return { bars: bars, rows: rows };
+  }
+}
+</script>
+</body>
+</html>

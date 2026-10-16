@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>magpie-lite manager window</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#2F6FE0;text-decoration:none}a:hover{color:#1F55B8}
+button:focus-visible,a:focus-visible{outline:2px solid #5B9BFF;outline-offset:2px}
+</style>
+</helmet>
+<div style="width: 1160px; height: 800px; box-sizing: border-box; padding: 40px; background: {{t.wall}}; color: {{t.text}}; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; -webkit-font-smoothing: antialiased">
+  <div style="height: 720px; box-sizing: border-box; border-radius: 14px; background: {{t.win}}; border: 1px solid {{t.winBorder}}; box-shadow: {{t.winShadow}}; display: flex; flex-direction: column; overflow: hidden">
+
+    <div style="height: 52px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 18px; border-bottom: 1px solid {{t.hair}}; background: {{t.titlebar}}">
+      <div style="display: flex; gap: 8px" aria-hidden="true">
+        <span style="width: 12px; height: 12px; border-radius: 6px; background: #FF5F57"></span>
+        <span style="width: 12px; height: 12px; border-radius: 6px; background: #FEBC2E"></span>
+        <span style="width: 12px; height: 12px; border-radius: 6px; background: #28C840"></span>
+      </div>
+      <span style="font-size: 14px; font-weight: 650">magpie-lite</span>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 18px">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <span style="font-size: 12px; color: {{t.sub}}">Refresh every</span>
+          <div role="group" aria-label="Refresh interval" style="display: flex; padding: 2px; border-radius: 8px; background: {{t.btn}}">
+            <sc-for list="{{intervals}}" as="iv" hint-placeholder-count="3">
+              <button onClick="{{iv.pick}}" aria-pressed="{{iv.pressed}}" style="height: 24px; padding: 0 12px; border-radius: 6px; border: none; background: {{iv.bg}}; box-shadow: {{iv.shadow}}; color: {{t.text}}; font-size: 12px; font-weight: {{iv.weight}}; cursor: pointer">{{iv.label}}</button>
+            </sc-for>
+          </div>
+        </div>
+        <button style="height: 28px; padding: 0 12px; border-radius: 8px; border: none; background: {{t.btn}}; color: {{t.text}}; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; cursor: pointer">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"></path><path d="M21 4v5h-5"></path></svg>Refresh live accounts
+        </button>
+        <div style="display: flex; align-items: center; gap: 8px">
+          <span style="font-size: 12px; color: {{t.sub}}">Launch at login</span>
+          <button role="switch" aria-checked="{{launchAria}}" aria-label="Launch at login" onClick="{{toggleLaunch}}" style="width: 38px; height: 22px; border-radius: 11px; border: none; background: {{launchBg}}; position: relative; cursor: pointer; padding: 0">
+            <span style="position: absolute; top: 2px; left: {{knobLeft}}; width: 18px; height: 18px; border-radius: 9px; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.25)"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr)">
+
+      <nav aria-label="Providers" style="border-right: 1px solid {{t.hair}}; background: {{t.side}}; padding: 14px 10px; display: flex; flex-direction: column; gap: 4px">
+        <span style="padding: 0 8px 6px; font-size: 10.5px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: {{t.ter}}">Providers</span>
+        <sc-for list="{{tools}}" as="p" hint-placeholder-count="3">
+          <button onClick="{{p.select}}" aria-pressed="{{p.onAria}}" style="width: 100%; box-sizing: border-box; text-align: left; border: none; border-radius: 9px; background: {{p.navBg}}; padding: 8px 10px; display: flex; align-items: center; gap: 10px; font-family: inherit; color: {{t.text}}; cursor: pointer">
+            <span style="flex: none; width: 24px; height: 24px; border-radius: 7px; background: {{p.accent}}; color: #FFFFFF; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{p.mark}}</span>
+            <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+              <span style="display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: {{p.navWeight}}">{{p.name}}<sc-if value="{{p.inBar}}" hint-placeholder-val="{{ false }}"><svg width="11" height="10" viewBox="0 0 16 14" role="img" aria-label="Shown in menubar" style="color: {{t.ter}}"><rect x="1" y="6" width="3" height="7" rx="1" fill="currentColor"></rect><rect x="6.5" y="3" width="3" height="10" rx="1" fill="currentColor"></rect><rect x="12" y="1" width="3" height="12" rx="1" fill="currentColor" opacity="0.5"></rect></svg></sc-if></span>
+              <span style="font-size: 11px; color: {{t.sub}}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{p.liveEmail}}</span>
+            </span>
+            <span style="flex: none; display: flex; flex-direction: column; align-items: flex-end; font-size: 10.5px; font-weight: 650; line-height: 12px; font-variant-numeric: tabular-nums">
+              <span style="color: {{p.c5}}">{{p.s5}}</span>
+              <span style="color: {{p.c7}}">{{p.s7}}</span>
+            </span>
+          </button>
+        </sc-for>
+      </nav>
+
+      <sc-for list="{{shown}}" as="tool" hint-placeholder-count="1">
+        <main style="min-width: 0; padding: 22px 24px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto">
+
+          <div style="display: flex; align-items: center; gap: 12px">
+            <span style="flex: none; width: 32px; height: 32px; border-radius: 9px; background: {{tool.accent}}; color: #FFFFFF; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{tool.mark}}</span>
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+              <h1 style="margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em">{{tool.name}}</h1>
+              <span style="font-size: 12px; color: {{t.sub}}">Signed in as <b style="color: {{t.text}}">{{tool.liveEmail}}</b>{{tool.liveSuffix}} · {{tool.count}}</span>
+            </div>
+            <div style="flex: none; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 4px 0 12px; border-radius: 9px; background: {{t.soft}}">
+              <span style="font-size: 12px; color: {{t.text}}">Show in menubar</span>
+              <button role="switch" aria-checked="{{tool.barAria}}" aria-label="{{tool.barLabel}}" onClick="{{tool.toggleBar}}" style="width: 34px; height: 20px; border-radius: 10px; border: none; background: {{tool.barBg}}; position: relative; cursor: pointer; padding: 0; margin-right: 4px">
+                <span style="position: absolute; top: 2px; left: {{tool.barKnob}}; width: 16px; height: 16px; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.25)"></span>
+              </button>
+            </div>
+            <button onClick="{{tool.save}}" style="flex: none; height: 30px; padding: 0 12px; border-radius: 9px; border: none; background: {{t.ok}}; color: #FFFFFF; font-size: 12px; font-weight: 600; cursor: pointer">Save current login</button>
+          </div>
+
+          <sc-if value="{{tool.flash}}" hint-placeholder-val="{{ false }}">
+            <div style="padding: 8px 12px; border-radius: 9px; background: {{t.flashBg}}; color: {{t.flashText}}; font-size: 12px; font-weight: 600">{{tool.flashText}}</div>
+          </sc-if>
+
+          <sc-if value="{{tool.undo}}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; border-radius: 9px; background: {{t.soft}}; font-size: 12px">
+              <span style="flex: 1; min-width: 0">{{tool.undoText}}</span>
+              <button onClick="{{tool.undoIt}}" style="height: 26px; padding: 0 12px; border-radius: 8px; border: none; background: {{t.btn}}; color: {{t.text}}; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer">Undo</button>
+            </div>
+          </sc-if>
+
+          <section style="border-radius: 12px; background: {{t.card}}; border: 1px solid {{t.hair}}; overflow: hidden">
+            <div style="display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr) 140px; gap: 20px; padding: 8px 16px; background: {{t.thead}}; font-size: 10.5px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: {{t.ter}}">
+              <span>Account</span><span>5 h window</span><span>7 d window</span><span></span>
+            </div>
+            <sc-for list="{{tool.rows}}" as="r" hint-placeholder-count="3">
+              <div style="display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr) 140px; gap: 20px; align-items: center; padding: 12px 16px; border-top: 1px solid {{t.hair}}; background: {{r.bg}}">
+                <div style="min-width: 0; display: flex; flex-direction: column; gap: 4px">
+                  <span style="font-size: 13px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{r.email}}</span>
+                  <span style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap">
+                    <span style="height: 17px; padding: 0 6px; border-radius: 4px; background: {{t.chip}}; color: {{t.sub}}; font-size: 10.5px; font-weight: 600; display: inline-flex; align-items: center">{{r.plan}}</span>
+                    <sc-if value="{{r.stale}}" hint-placeholder-val="{{ false }}">
+                      <span style="font-size: 11px; color: {{t.ter}}">updated 18 min ago</span>
+                    </sc-if>
+                    <sc-if value="{{r.dead}}" hint-placeholder-val="{{ false }}">
+                      <span style="height: 17px; padding: 0 7px; border-radius: 9px; background: {{t.deadBg}}; color: {{t.deadText}}; font-size: 10.5px; font-weight: 650; display: inline-flex; align-items: center">Needs sign-in</span>
+                    </sc-if>
+                  </span>
+                </div>
+
+                <div style="min-width: 0; display: flex; flex-direction: column; gap: 8px; opacity: {{r.opacity}}">
+                  <sc-for list="{{r.groups}}" as="g" hint-placeholder-count="1">
+                    <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0">
+                      <div style="display: flex; align-items: baseline; gap: 6px; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap">
+                        <sc-if value="{{g.named}}" hint-placeholder-val="{{ false }}"><span style="color: {{t.sub}}; font-weight: 600">{{g.name}}</span></sc-if>
+                        <span style="font-size: 13px; font-weight: 650">{{g.w5.label}}</span>
+                        <span style="margin-left: auto; color: {{t.ter}}; overflow: hidden; text-overflow: ellipsis">{{g.w5.reset}}</span>
+                      </div>
+                      <div style="height: 5px; border-radius: 3px; background: {{t.track}}; overflow: hidden"><div style="height: 100%; width: {{g.w5.pct}}; border-radius: 3px; background: {{g.w5.color}}"></div></div>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{r.dead}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: {{t.ter}}">—</span></sc-if>
+                </div>
+
+                <div style="min-width: 0; display: flex; flex-direction: column; gap: 8px; opacity: {{r.opacity}}">
+                  <sc-for list="{{r.groups}}" as="g" hint-placeholder-count="1">
+                    <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0">
+                      <div style="display: flex; align-items: baseline; gap: 6px; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap">
+                        <sc-if value="{{g.named}}" hint-placeholder-val="{{ false }}"><span style="color: {{t.sub}}; font-weight: 600">{{g.name}}</span></sc-if>
+                        <span style="font-size: 13px; font-weight: 650">{{g.w7.label}}</span>
+                        <span style="margin-left: auto; color: {{t.ter}}; overflow: hidden; text-overflow: ellipsis">{{g.w7.reset}}</span>
+                      </div>
+                      <div style="height: 5px; border-radius: 3px; background: {{t.track}}; overflow: hidden"><div style="height: 100%; width: {{g.w7.pct}}; border-radius: 3px; background: {{g.w7.color}}"></div></div>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{r.dead}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: {{t.ter}}">—</span></sc-if>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; align-items: center; gap: 4px">
+                  <sc-if value="{{r.isLive}}" hint-placeholder-val="{{ false }}">
+                    <span style="display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 12px; background: {{t.liveBg}}; color: {{t.liveText}}; font-size: 11.5px; font-weight: 650"><span style="width: 6px; height: 6px; border-radius: 3px; background: {{t.liveText}}"></span>Live</span>
+                  </sc-if>
+                  <sc-if value="{{r.notLive}}" hint-placeholder-val="{{ true }}">
+                    <button onClick="{{r.pick}}" disabled="{{r.dead}}" aria-label="{{r.switchLabel}}" style="height: 26px; padding: 0 11px; border-radius: 13px; border: none; background: {{t.chip}}; color: {{t.text}}; font-size: 12px; font-weight: 600; cursor: pointer; opacity: {{r.btnOpacity}}">Switch</button>
+                  </sc-if>
+                  <button aria-label="{{r.refreshLabel}}" title="Refresh this account" style="width: 26px; height: 26px; border-radius: 13px; border: none; background: transparent; color: {{t.sub}}; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"></path><path d="M21 4v5h-5"></path></svg>
+                  </button>
+                  <button onClick="{{r.remove}}" aria-label="{{r.removeLabel}}" style="width: 26px; height: 26px; border-radius: 13px; border: none; background: transparent; color: {{t.ter}}; display: flex; align-items: center; justify-content: center; cursor: pointer">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"></path><path d="M9 7V4h6v3"></path><path d="M6 7l1 13h10l1-13"></path></svg>
+                  </button>
+                </div>
+              </div>
+            </sc-for>
+            <sc-if value="{{tool.empty}}" hint-placeholder-val="{{ false }}">
+              <div style="padding: 36px 24px; border-top: 1px solid {{t.hair}}; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center">
+                <span style="font-size: 14px; font-weight: 650">No saved accounts</span>
+                <span style="max-width: 360px; font-size: 12px; line-height: 1.45; color: {{t.sub}}">Sign in with {{tool.name}} as usual, then choose Save current login to keep it here.</span>
+              </div>
+            </sc-if>
+          </section>
+        </main>
+      </sc-for>
+    </div>
+
+    <div style="flex: none; display: flex; justify-content: space-between; gap: 24px; padding: 12px 20px; border-top: 1px solid {{t.hair}}; font-size: 11.5px; color: {{t.sub}}; line-height: 1.45">
+      <span>To add an account, sign in with the tool itself — without signing out first — then choose Save current login.</span>
+      <span style="flex: none">Saved logins: owner-only files in Application Support, kept out of Time Machine.</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1160,"height":800}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      interval: 5,
+      launch: true,
+      tab: 'claude',
+      bar: { claude: true, codex: true, agy: false },
+      live: { claude: 'work@example.com', codex: 'work@example.com', agy: 'me@example.com' },
+      removed: [],
+      flash: null,
+      undo: null
+    };
+  }
+  renderVals() {
+    const dark = this.props.dark ?? false;
+    const t = dark ? {
+      wall: '#14171D', text: '#F5F5F7', sub: '#B8B8BF', ter: '#A2A2AA', win: '#232327', winBorder: 'rgba(255,255,255,0.12)',
+      winShadow: '0 30px 80px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.35)', titlebar: 'rgba(255,255,255,0.04)', hair: 'rgba(255,255,255,0.09)',
+      side: 'rgba(255,255,255,0.03)', thead: 'rgba(255,255,255,0.03)', card: 'rgba(255,255,255,0.05)', track: 'rgba(255,255,255,0.13)',
+      ok: '#5B9BFF', warn: '#F0A14A', low: '#FF6B6B', btn: 'rgba(255,255,255,0.10)', chip: 'rgba(255,255,255,0.09)', soft: 'rgba(255,255,255,0.06)',
+      flashBg: 'rgba(80,200,170,0.14)', flashText: '#8FE0CC', deadBg: 'rgba(255,107,107,0.15)', deadText: '#FFA3A3',
+      liveBg: 'rgba(91,155,255,0.18)', liveText: '#A3C6FF', liveRow: 'rgba(91,155,255,0.07)', segOn: 'rgba(255,255,255,0.18)',
+      swOff: 'rgba(255,255,255,0.22)', navOn: 'rgba(255,255,255,0.10)', barLow: '#FF8A8A'
+    } : {
+      wall: '#D8DEE7', text: '#1D1D1F', sub: '#55555B', ter: '#6A6A70', win: '#F6F6F8', winBorder: 'rgba(0,0,0,0.12)',
+      winShadow: '0 30px 80px rgba(15,20,30,0.25), 0 2px 8px rgba(15,20,30,0.08)', titlebar: 'rgba(255,255,255,0.6)', hair: 'rgba(0,0,0,0.08)',
+      side: 'rgba(0,0,0,0.025)', thead: 'rgba(0,0,0,0.025)', card: '#FFFFFF', track: 'rgba(0,0,0,0.08)',
+      ok: '#2F6FE0', warn: '#D9822B', low: '#D23F3F', btn: 'rgba(0,0,0,0.07)', chip: 'rgba(0,0,0,0.06)', soft: 'rgba(0,0,0,0.04)',
+      flashBg: 'rgba(43,138,120,0.12)', flashText: '#1E6B5D', deadBg: 'rgba(210,63,63,0.10)', deadText: '#B02E2E',
+      liveBg: 'rgba(47,111,224,0.12)', liveText: '#1F56B8', liveRow: 'rgba(47,111,224,0.04)', segOn: '#FFFFFF',
+      swOff: 'rgba(0,0,0,0.18)', navOn: 'rgba(0,0,0,0.075)', barLow: '#C2362F'
+    };
+    const color = (v) => v == null ? t.track : v >= 40 ? t.ok : v >= 15 ? t.warn : t.low;
+    const win = (v, reset) => ({ label: v == null ? '—' : v + '%', pct: (v == null ? 0 : v) + '%', color: color(v), reset: reset });
+    const mins = (gs, k) => { const vs = gs.map((g) => g[k]).filter((v) => v != null); return vs.length ? Math.min.apply(null, vs) : null; };
+    const data = [
+      { id: 'claude', name: 'Claude Code', mark: 'C', accent: '#C96442', accounts: [
+        { email: 'work@example.com', plan: 'Max 20×', groups: [
+          { name: 'All models', l5: 62, r5: 'in 2h 14m', l7: 40, r7: 'in 6d 18h' },
+          { name: 'Fable', l5: null, r5: 'weekly only', l7: 28, r7: 'in 6d 18h' }] },
+        { email: 'personal@example.com', plan: 'Pro', groups: [
+          { name: 'All models', l5: 88, r5: 'in 4h 02m', l7: 71, r7: 'in 3d 4h' },
+          { name: 'Fable', l5: null, r5: 'weekly only', l7: 64, r7: 'in 3d 4h' }] },
+        { email: 'team@example.com', plan: 'Team · Acme', groups: [
+          { name: 'All models', l5: 100, r5: 'not started', l7: 93, r7: 'in 4d 21h' },
+          { name: 'Fable', l5: null, r5: 'weekly only', l7: 81, r7: 'in 4d 21h' }] },
+        { email: 'side@example.com', plan: 'Pro', dead: true, groups: [] }
+      ] },
+      { id: 'codex', name: 'Codex', mark: 'X', accent: '#2B8A78', accounts: [
+        { email: 'work@example.com', plan: 'Plus', groups: [{ name: '', l5: 80, r5: 'in 3h 40m', l7: 71, r7: 'in 3d 19h' }] },
+        { email: 'personal@example.com', plan: 'Pro', groups: [{ name: '', l5: null, r5: 'weekly only', l7: 54, r7: 'in 1d 16h' }] },
+        { email: 'team@example.com', plan: 'Team · Acme', groups: [{ name: '', l5: 12, r5: 'in 48m', l7: 35, r7: 'in 6d 7h' }] },
+        { email: 'old@example.com', plan: 'Plus', stale: true, groups: [{ name: '', l5: 66, r5: 'in 1h 10m', l7: 80, r7: 'in 18h 30m' }] }
+      ] },
+      { id: 'agy', name: 'Antigravity CLI', mark: 'G', accent: '#3B74E0', accounts: [
+        { email: 'me@example.com', plan: 'Google AI Pro', groups: [
+          { name: 'Gemini', l5: 45, r5: 'in 1h 32m', l7: 90, r7: 'in 2d 17h' },
+          { name: 'Claude & GPT', l5: 30, r5: 'in 2h 05m', l7: 95, r7: 'in 2d 17h' }] },
+        { email: 'lab@example.com', plan: 'Google AI Ultra', groups: [
+          { name: 'Gemini', l5: 100, r5: 'not started', l7: 98, r7: 'in 3d 18h' },
+          { name: 'Claude & GPT', l5: 77, r5: 'in 3h 50m', l7: 91, r7: 'in 3d 18h' }] },
+        { email: 'free@example.com', plan: 'Free', groups: [
+          { name: 'Gemini', l5: null, r5: 'weekly only', l7: 64, r7: 'in 5d 20h' },
+          { name: 'Claude & GPT', l5: null, r5: 'weekly only', l7: 80, r7: 'in 5d 20h' }] }
+      ] }
+    ];
+    const st = this.state;
+    const fmt = (v) => v == null ? '—' : v + '%';
+    const lowC = (v) => v != null && v < 15 ? t.barLow : t.text;
+    const tools = data.map((tool) => {
+      const kept = tool.accounts.filter((a) => st.removed.indexOf(tool.id + ':' + a.email) < 0);
+      const liveEmail = st.live[tool.id];
+      const liveAcc = kept.find((a) => a.email === liveEmail);
+      const ordered = liveAcc ? [liveAcc].concat(kept.filter((a) => a !== liveAcc)) : kept;
+      const rows = ordered.map((a) => {
+        const isLive = a === liveAcc;
+        return {
+          email: a.email,
+          plan: a.plan,
+          bg: isLive ? t.liveRow : 'transparent',
+          stale: !!a.stale,
+          dead: !!a.dead,
+          opacity: a.stale ? 0.7 : 1,
+          groups: a.groups.map((g) => ({ name: g.name, named: !!g.name, w5: win(g.l5, g.r5), w7: win(g.l7, g.r7) })),
+          isLive: isLive,
+          notLive: !isLive,
+          btnOpacity: a.dead ? 0.4 : 1,
+          switchLabel: 'Switch ' + tool.name + ' to ' + a.email,
+          removeLabel: 'Remove ' + a.email + ' from ' + tool.name,
+          refreshLabel: 'Refresh ' + a.email + ' for ' + tool.name,
+          pick: () => {
+            if (a.dead) return;
+            const next = Object.assign({}, this.state.live);
+            next[tool.id] = a.email;
+            this.setState({ live: next, flash: null });
+          },
+          remove: () => this.setState({ removed: this.state.removed.concat([tool.id + ':' + a.email]), flash: null, undo: tool.id + ':' + a.email })
+        };
+      });
+      const lg = liveAcc ? liveAcc.groups : [];
+      const ml5 = mins(lg, 'l5');
+      const ml7 = mins(lg, 'l7');
+      const on = st.tab === tool.id;
+      const inBar = !!st.bar[tool.id];
+      return {
+        id: tool.id,
+        name: tool.name,
+        mark: tool.mark,
+        accent: tool.accent,
+        on: on,
+        onAria: on ? 'true' : 'false',
+        navBg: on ? t.navOn : 'transparent',
+        navWeight: on ? 650 : 550,
+        select: () => this.setState({ tab: tool.id, flash: null, undo: null }),
+        s5: fmt(ml5),
+        s7: fmt(ml7),
+        c5: lowC(ml5),
+        c7: lowC(ml7),
+        liveEmail: liveEmail,
+        liveSuffix: liveAcc ? '' : ' — not saved',
+        count: kept.length + ' saved',
+        rows: rows,
+        inBar: inBar,
+        empty: rows.length === 0,
+        undo: !!st.undo && st.undo.indexOf(tool.id + ':') === 0,
+        undoText: st.undo && st.undo.indexOf(tool.id + ':') === 0 ? 'Removed ' + st.undo.slice(tool.id.length + 1) + '. Its saved login file was deleted.' : '',
+        undoIt: () => this.setState({ removed: this.state.removed.filter((k) => k !== this.state.undo), undo: null }),
+        barAria: inBar ? 'true' : 'false',
+        barLabel: 'Show ' + tool.name + ' in menubar',
+        barBg: inBar ? '#34C759' : t.swOff,
+        barKnob: inBar ? '16px' : '2px',
+        toggleBar: () => {
+          const b = Object.assign({}, this.state.bar);
+          b[tool.id] = !b[tool.id];
+          this.setState({ bar: b });
+        },
+        flash: st.flash === tool.id,
+        flashText: liveAcc ? 'Updated the saved login for ' + liveEmail + '.' : 'Saved ' + liveEmail + '.',
+        save: () => {
+          const back = this.state.removed.filter((k) => k !== tool.id + ':' + liveEmail);
+          this.setState({ removed: back, flash: tool.id });
+        }
+      };
+    });
+    const intervals = [3, 5, 10].map((m) => ({
+      label: m + ' min',
+      pressed: st.interval === m ? 'true' : 'false',
+      bg: st.interval === m ? t.segOn : 'transparent',
+      shadow: st.interval === m ? '0 1px 2px rgba(0,0,0,0.15)' : 'none',
+      weight: st.interval === m ? 650 : 500,
+      pick: () => this.setState({ interval: m })
+    }));
+    return {
+      t: t,
+      tools: tools,
+      shown: tools.filter((x) => x.on),
+      intervals: intervals,
+      launchAria: st.launch ? 'true' : 'false',
+      launchBg: st.launch ? '#34C759' : t.swOff,
+      knobLeft: st.launch ? '18px' : '2px',
+      toggleLaunch: () => this.setState({ launch: !this.state.launch })
+    };
+  }
+}
+</script>
+</body>
+</html>
