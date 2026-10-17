@@ -24,11 +24,10 @@ public enum ManagerText {
     public static func saveBanner(_ result: SaveResult) -> String { result.message }
 
     public static func header(_ snapshot: ToolSnapshot) -> String {
-        let saved = snapshot.accounts.filter(\.isSaved).count
-        guard case .signedIn(let login)? = snapshot.live else { return "Not signed in · \(saved) saved" }
+        guard case .signedIn(let login)? = snapshot.live else { return "Not signed in" }
         let email = login.label.isEmpty ? "Unknown account" : login.label
         let isSaved = snapshot.accounts.contains { $0.isSaved && $0.key.id == login.identity.fileID }
-        return "Signed in as \(email)\(isSaved ? "" : " — not saved") · \(saved) saved"
+        return "Signed in as \(email)\(isSaved ? "" : " — not saved")"
     }
 
     public static let emptyTitle = "No saved accounts"

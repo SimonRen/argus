@@ -204,8 +204,8 @@ import ArgusCore
         try await rig.save(testLogin(.claude, "a"))
         try await rig.save(testLogin(.claude, "b"))
         await rig.poller.runBatch()
-        #expect(ManagerText.header(rig.state.snapshot(.claude)) == "Signed in as a@example.com · 2 saved")
-        #expect(ManagerText.header(rig.state.snapshot(.codex)) == "Signed in as x@example.com — not saved · 0 saved")
-        #expect(ManagerText.header(rig.state.snapshot(.agy)) == "Not signed in · 0 saved")
+        #expect(ManagerText.header(rig.state.snapshot(.claude)) == "Signed in as a@example.com")
+        #expect(ManagerText.header(rig.state.snapshot(.codex)) == "Signed in as x@example.com — not saved")
+        #expect(ManagerText.header(rig.state.snapshot(.agy)) == "Not signed in")
     }
 }

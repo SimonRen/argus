@@ -6,6 +6,11 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+### Changed
+
+- The manager's header no longer shows the saved-account count: it reads "Signed in as <email>" (with " — not saved"
+  when the live login isn't saved) or "Not signed in".
+
 ## [0.1.1] - 2026-10-17
 
 ### Added
