@@ -14,7 +14,6 @@ import Observation
     private var popover: NSPopover?
     private var screen: PopoverScreen?
     private var openManager: () -> Void = {}
-    private var onOpen: () -> Void = {}
 
     init(state: AppState, preferences: MenuBarPreferences) {
         self.state = state
@@ -32,8 +31,8 @@ import Observation
         render()
     }
 
-    /// One transient popover hosting `content`, calling `onOpen` as it opens; with no status item window, clicks open the manager instead.
-    func attach(popover content: NSViewController, screen: PopoverScreen, onOpen: @escaping () -> Void, openManager: @escaping () -> Void) {
+    /// One transient popover hosting `content`; with no status item window, clicks open the manager instead.
+    func attach(popover content: NSViewController, screen: PopoverScreen, openManager: @escaping () -> Void) {
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = false
@@ -48,7 +47,6 @@ import Observation
             }
         }
         self.screen = screen
-        self.onOpen = onOpen
         self.openManager = openManager
     }
 
@@ -69,7 +67,6 @@ import Observation
         // known-ceiling: `activate(ignoringOtherApps:)` is marked to-be-deprecated → when it warns, find the replacement.
         if let frame = (button.window?.screen ?? NSScreen.main)?.visibleFrame { screen?.visibleHeight = frame.height }
         NSApp.activate(ignoringOtherApps: true)
-        onOpen()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         // A transient popover closes on outside clicks only while the app is active; activation can be refused,
@@ -100,10 +97,10 @@ import Observation
 
     // MARK: - Drawing (DEC-10)
 
-    /// `mark` is the letter fallback's box; a tool icon takes the standard 18 pt menubar size.
+    /// `mark` is the letter fallback's box; a tool icon's box is 20 pt, so with its 10 % margin per side the glyph itself is a standard 16 pt menubar icon.
     /// The system already spaces status items apart, so the side padding is small; the tool icons carry about 10 % empty
     /// margin per side, so the icon-to-value gap and the gap between tools are drawn tighter than they read.
-    private static let padding: CGFloat = 2, mark: CGFloat = 14, iconMark: CGFloat = 18, gap: CGFloat = 1, spacing: CGFloat = 5, height: CGFloat = 22
+    private static let padding: CGFloat = 2, mark: CGFloat = 14, iconMark: CGFloat = 20, gap: CGFloat = 1, spacing: CGFloat = 5, height: CGFloat = 22
     /// The menu bar's own font (size and regular weight), with digits of equal width so values don't shift as they change.
     private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)
     private static let letterFont = NSFont.systemFont(ofSize: 8.5, weight: .heavy)

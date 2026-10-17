@@ -10,6 +10,15 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 - The manager's header no longer shows the saved-account count: it reads "Signed in as <email>" (with " — not saved"
   when the live login isn't saved) or "Not signed in".
+- The popover shows each tool as a table: the window names (5h, 7d, and model limits such as Fable 7d) once at the top,
+  and per account a bar for each with the share used on it and the reset time under it. A window an account doesn't have
+  reads "none" instead of "weekly only", in the manager too; an account that needs sign-in or hasn't been fetched yet
+  shows one box across the columns.
+- Popover rows show the email up to the @ (the full email on hover) with the plan and "live" under it; Switch is an icon
+  button, and "Show less" reads "Live only".
+- Opening the popover no longer re-reads the live logins; they refresh on the interval, with the refresh buttons and after
+  a switch.
+- The menubar's tool icons are drawn at the same size as the other menubar icons.
 
 ## [0.1.1] - 2026-10-17
 

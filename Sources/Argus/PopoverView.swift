@@ -151,19 +151,28 @@ struct CardView: View {
                         HStack(spacing: 3) {
                             Text(more)
                             Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
-                                .rotationEffect(.degrees(more == "Show less" ? 180 : 0))
+                                .rotationEffect(.degrees(more == "Live only" ? 180 : 0))
                         }
                         .font(.system(size: 11, weight: .semibold)).foregroundStyle(t.sub)
                     }
                     .buttonStyle(HoverStyle.text)
-                    .accessibilityLabel(more == "Show less" ? "Hide other \(card.tool.displayName) accounts" : "Show other \(card.tool.displayName) accounts")
+                    .accessibilityLabel(more == "Live only" ? "Hide other \(card.tool.displayName) accounts" : "Show other \(card.tool.displayName) accounts")
                 }
             }
             .padding(EdgeInsets(top: 8, leading: 12, bottom: 6, trailing: 12))
             // Expanded lists every account in a fixed order, the live one in place; collapsed shows only the live one.
-            let expanded = card.moreLabel == "Show less"
+            let expanded = card.moreLabel == "Live only"
+            if card.liveRow != nil || expanded {
+                HStack(spacing: Table.gap) {
+                    Text("ACCOUNT").frame(maxWidth: .infinity, alignment: .leading)
+                    ForEach(card.columns, id: \.self) { Text($0.uppercased()).frame(width: Table.cell) }
+                    Color.clear.frame(width: Table.actions, height: 1)
+                }
+                .font(.system(size: 9.5, weight: .semibold)).tracking(0.6).foregroundStyle(t.ter).lineLimit(1)
+                .padding(EdgeInsets(top: 0, leading: 12, bottom: 5, trailing: 12))
+            }
             if let live = card.liveRow, !expanded {
-                RowView(row: live, tool: card.tool, suggestion: card.suggestion, theme: t, actions: actions)
+                RowView(row: live, tool: card.tool, columns: card.columns, suggestion: card.suggestion, theme: t, actions: actions)
             } else if card.liveRow == nil, let status = card.liveStatusText {
                 HStack {
                     Text(status).font(.system(size: 12)).foregroundStyle(t.sub)
@@ -173,7 +182,7 @@ struct CardView: View {
                 .overlay(alignment: .top) { t.hair.frame(height: 1) }
             }
             if expanded {
-                ForEach(card.rows) { RowView(row: $0, tool: card.tool, suggestion: $0.isLive ? card.suggestion : nil, theme: t, actions: actions) }
+                ForEach(card.rows) { RowView(row: $0, tool: card.tool, columns: card.columns, suggestion: $0.isLive ? card.suggestion : nil, theme: t, actions: actions) }
             }
         }
         .background(t.card)
@@ -182,9 +191,19 @@ struct CardView: View {
     }
 }
 
+/// The card table's widths, shared by its header and rows so the columns line up.
+private enum Table {
+    static let cell: CGFloat = 56
+    static let gap: CGFloat = 6
+    /// Switch (24) and refresh (22).
+    static let actions: CGFloat = 50
+}
+
 struct RowView: View {
     let row: AccountRow
     let tool: Tool
+    /// The card's window columns (`ToolCard.columns`).
+    let columns: [String]
     let suggestion: Suggestion?
     let theme: Theme
     let actions: CardView.Actions
@@ -192,33 +211,44 @@ struct RowView: View {
     var body: some View {
         let t = theme
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text(row.email).font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.tail)
-                if let plan = row.plan, !plan.isEmpty { Chip(text: plan, theme: t) }
-                Spacer(minLength: 4)
-                let problem = PopoverText.problem(tool: tool, error: row.error, retryAt: row.retryAt, now: .now, timeZone: .current)
-                ForEach(Array(row.badges.enumerated()), id: \.offset) {
-                    BadgeView(badge: $0.element, theme: t, help: $0.element.isFetchProblem ? problem : nil)
-                }
-                if row.isLive {
-                    HStack(spacing: 5) {
-                        Circle().fill(t.liveText).frame(width: 6, height: 6)
-                        Text("Live").font(.system(size: 11, weight: .semibold))
+            HStack(spacing: Table.gap) {
+                HStack(alignment: .top, spacing: 6) {
+                    Circle().fill(row.isLive ? t.liveText : .clear).frame(width: 7, height: 7).padding(.top, 5)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.name).font(.system(size: 13, weight: .semibold)).lineLimit(1).truncationMode(.tail).help(row.email)
+                        // Badges beside the plan, or under it when they don't fit.
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 5) { subtitle(t); badges(t) }
+                            VStack(alignment: .leading, spacing: 2) { subtitle(t); HStack(spacing: 5) { badges(t) } }
+                        }
                     }
-                    .foregroundStyle(t.liveText).padding(.horizontal, 9).frame(height: 22).background(t.liveBg, in: Capsule())
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let banner = row.banner {
+                    let span = CGFloat(columns.count) * Table.cell + CGFloat(columns.count - 1) * Table.gap
+                    let problem = PopoverText.problem(tool: tool, error: row.error, retryAt: row.retryAt, now: .now, timeZone: .current)
+                    BannerView(banner: banner, theme: t).frame(width: span).help(row.badges.contains(.notFetched) ? problem : "")
                 } else {
-                    PillButton(title: "Switch", fill: t.btn, foreground: t.text, disabled: row.switchDisabledReason != nil) { actions.switchTo(row.id) }
+                    ForEach(Array(row.cells(columns).enumerated()), id: \.offset) { CellView(cell: $0.element, theme: t) }
+                }
+                HStack(spacing: 4) {
+                    if !row.isLive {
+                        Button { actions.switchTo(row.id) } label: {
+                            Image(systemName: "arrow.left.arrow.right").font(.system(size: 10, weight: .bold)).foregroundStyle(t.text)
+                                .frame(width: 24, height: 24).background(t.btn, in: RoundedRectangle(cornerRadius: 7))
+                        }
+                        .buttonStyle(HoverStyle(filled: AnyShape(RoundedRectangle(cornerRadius: 7))))
+                        .disabled(row.switchDisabledReason != nil).opacity(row.switchDisabledReason != nil ? 0.4 : 1)
                         .help(row.switchDisabledReason ?? "Switch \(tool.displayName) to \(row.email)")
+                        .accessibilityLabel("Switch \(tool.displayName) to \(row.email)")
+                    }
+                    RefreshButton(action: { await actions.refresh(row.id) }, active: row.isFetching) { angle in
+                        Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .bold)).rotationEffect(angle).frame(width: 22, height: 22)
+                    }
+                    .buttonStyle(HoverStyle()).foregroundStyle(t.sub).disabled(!row.refreshEnabled).opacity(row.refreshEnabled ? 1 : 0.4)
+                    .help("Refresh this account").accessibilityLabel("Refresh \(tool.displayName) \(row.email)")
                 }
-                RefreshButton(action: { await actions.refresh(row.id) }, active: row.isFetching) { angle in
-                    Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .bold)).rotationEffect(angle).frame(width: 22, height: 22)
-                }
-                .buttonStyle(HoverStyle()).foregroundStyle(t.sub).disabled(!row.refreshEnabled).opacity(row.refreshEnabled ? 1 : 0.4)
-                .help("Refresh this account").accessibilityLabel("Refresh \(tool.displayName) \(row.email)")
-            }
-            .frame(height: 22)
-            VStack(spacing: 6) {
-                ForEach(Array(row.groups.enumerated()), id: \.offset) { GroupView(group: $0.element, theme: t) }
+                .frame(width: Table.actions, alignment: .trailing)
             }
             if let suggestion {
                 HStack(spacing: 8) {
@@ -234,45 +264,61 @@ struct RowView: View {
         .background(row.isLive ? t.liveRow : .clear)
         .overlay(alignment: .top) { t.hair.frame(height: 1) }
     }
-}
 
-struct GroupView: View {
-    let group: GroupRow
-    let theme: Theme
+    @ViewBuilder private func subtitle(_ t: Theme) -> some View {
+        if !row.subtitle.isEmpty { Text(row.subtitle).font(.system(size: 10.5)).foregroundStyle(t.ter).lineLimit(1) }
+    }
 
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 12) {
-            if let name = group.name {
-                Text(name).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(theme.sub).lineLimit(1).frame(width: 70, alignment: .leading)
-            }
-            CellView(cell: group.fiveHour, theme: theme)
-            CellView(cell: group.sevenDay, theme: theme)
+    @ViewBuilder private func badges(_ t: Theme) -> some View {
+        let problem = PopoverText.problem(tool: tool, error: row.error, retryAt: row.retryAt, now: .now, timeZone: .current)
+        ForEach(Array(row.inlineBadges.enumerated()), id: \.offset) {
+            BadgeView(badge: $0.element, theme: t, help: $0.element.isFetchProblem ? problem : nil)
         }
-        .frame(height: 24)
     }
 }
 
+/// A blocked or never-fetched row: one box across the window columns instead of the cells.
+struct BannerView: View {
+    let banner: RowBanner
+    let theme: Theme
+
+    var body: some View {
+        Group {
+            switch banner {
+            case .blocked(let text):
+                Label(text, systemImage: "exclamationmark.triangle").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(theme.deadText)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity).background(theme.deadBg, in: RoundedRectangle(cornerRadius: 8))
+            case .notFetched:
+                Label("Not fetched yet", systemImage: "clock").font(.system(size: 11.5)).foregroundStyle(theme.sub)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.ter.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            }
+        }
+        .lineLimit(1).labelStyle(TightLabel()).frame(height: 34)
+    }
+}
+
+/// One table cell: a bar filled by the share used with the percentage on it, the reset time under it.
 struct CellView: View {
     let cell: WindowCell
     let theme: Theme
 
     var body: some View {
         VStack(spacing: 3) {
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text(cell.label).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(theme.sub)
-                Text(cell.percentText).font(.system(size: 12, weight: .semibold)).monospacedDigit()
-                Spacer(minLength: 2)
-                Text(cell.resetText).font(.system(size: 10.5)).monospacedDigit().foregroundStyle(theme.ter).lineLimit(1)
-            }
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(theme.track)
-                    Capsule().fill(theme.bar(cell.band)).frame(width: proxy.size.width * min(1, max(0, cell.fill)))
+            ZStack {
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        theme.track
+                        theme.cellFill(cell.band).frame(width: proxy.size.width * min(1, max(0, cell.fill)))
+                    }
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                Text(cell.percentText).font(.system(size: 11.5, weight: .semibold)).monospacedDigit().foregroundStyle(cell.band == .empty ? theme.ter : theme.text)
             }
-            .frame(height: 4)
+            .frame(height: 20)
+            Text(cell.resetText).font(.system(size: 10)).monospacedDigit().foregroundStyle(theme.ter).lineLimit(1).minimumScaleFactor(0.85)
         }
-        .frame(maxWidth: .infinity)
+        .frame(width: Table.cell)
     }
 }
 

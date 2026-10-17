@@ -49,7 +49,7 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
         #expect(collapsed.liveRow?.plan == "PRO")
         #expect(collapsed.moreLabel == "+4 more")
         #expect(collapsed.others.map(\.id.id) == ["amy@example.com", "b1", "b2", "zed@example.com"])
-        #expect(card(snapshot(accounts), expanded: true).moreLabel == "Show less")
+        #expect(card(snapshot(accounts), expanded: true).moreLabel == "Live only")
         #expect(card(snapshot([account("live@example.com", live: true)])).moreLabel == nil)
     }
 
@@ -166,7 +166,7 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
         #expect(PopoverText.resetText(AllowanceWindow(remaining: 60, resetsAt: nil), now: now) == "—")
         #expect(PopoverText.resetText(nil, now: now) == "—")
         let weekly = AccountRowProbe(account("w@example.com", reading: reading([("", nil, 54)], resets: now + 3600))).row
-        #expect(weekly.groups[0].fiveHour.resetText == "weekly only")
+        #expect(weekly.groups[0].fiveHour.resetText == "none")
         #expect(weekly.groups[0].sevenDay.resetText == "in 1h 00m")
     }
 
@@ -176,7 +176,7 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
         #expect([100, 40, 39.6, 39.4, 15, 14.6, 14.4, 0].map(band) == [.ok, .ok, .ok, .warn, .warn, .warn, .low, .low])
         #expect(band(nil) == .empty)
         let row = AccountRowProbe(account("x@example.com", reading: reading([("", nil, 62)]))).row
-        #expect(row.groups[0].fiveHour == WindowCell(label: "5h", percentText: "—", band: .empty, resetText: "weekly only", fill: 0))
+        #expect(row.groups[0].fiveHour == WindowCell(label: "5h", percentText: "—", band: .empty, resetText: "none", fill: 0))
         #expect(row.groups[0].sevenDay.percentText == "38%" && row.groups[0].sevenDay.band == .ok && row.groups[0].sevenDay.fill == 0.38)
         let none = AccountRowProbe(account("y@example.com")).row
         #expect(none.groups.count == 1 && none.groups[0].fiveHour.band == .empty && none.groups[0].sevenDay.percentText == "—")
@@ -191,6 +191,43 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
         #expect(one.groups.map(\.name) == [nil])
         #expect(AccountRowProbe(account("g@example.com", reading: reading([("Gemini", 45, 90)]), tool: .agy)).row.groups.map(\.name) == ["Gemini"])
         #expect(AccountRowProbe(account("u@example.com", reading: reading([("", 45, 90)]), tool: .agy)).row.groups.map(\.name) == [nil])
+    }
+
+    @Test func `popover table columns come from every row and name a window by its group, except Claude's account-wide first group`() {
+        func labels(_ groups: [(String, Double?, Double?)], _ tool: Tool) -> [String] {
+            AccountRowProbe(account("x@example.com", reading: reading(groups), tool: tool)).row.windows.map(\.label)
+        }
+        #expect(labels([("All models", 84, 9), ("Fable", nil, 80)], .claude) == ["5h", "7d", "Fable 7d"])
+        #expect(labels([("", 45, 90)], .codex) == ["5h", "7d"])
+        #expect(labels([("Gemini", 45, 90), ("Claude & GPT", nil, 95)], .agy) == ["Gemini 5h", "Gemini 7d", "Claude & GPT 7d"])
+        let pro = account("a@example.com", live: true, reading: reading([("All models", 84, 9)]))
+        let maxPlan = account("b@example.com", reading: reading([("All models", 50, 50), ("Fable", nil, 80)]))
+        let claude = card(snapshot([pro, maxPlan, account("c@example.com")]))
+        #expect(claude.columns == ["5h", "7d", "Fable 7d"])
+        #expect(claude.liveRow?.cells(claude.columns).map(\.resetText).last == "none")
+        #expect(claude.rows.first { $0.email == "c@example.com" }?.cells(claude.columns).map(\.percentText) == ["—", "—", "—"])
+        #expect(card(snapshot([account("w@example.com", live: true, reading: reading([("", nil, 54)]))])).columns == ["7d"])
+        #expect(card(snapshot([account("u@example.com", live: true)])).columns == ["5h", "7d"])
+    }
+
+    @Test func `a blocked or never-fetched popover row spans the columns with one box, other badges stay beside the plan`() {
+        let fresh = AccountRowProbe(account("f@example.com", reading: reading([("", 50, 50)]))).row
+        #expect(fresh.banner == nil && fresh.inlineBadges.isEmpty)
+        #expect(AccountRowProbe(account("n@example.com")).row.banner == .notFetched)
+        let unfetched = AccountRowProbe(account("u@example.com", stale: true)).row
+        #expect(unfetched.banner == .notFetched && unfetched.inlineBadges.isEmpty && unfetched.badges == [.notFetched])
+        let blocked = AccountRowProbe(account("s@example.com", kept: true, flag: .needsSignIn, reading: reading([("", 50, 50)]))).row
+        #expect(blocked.banner == .blocked("Needs sign-in") && blocked.inlineBadges == [.kept])
+        let stale = AccountRowProbe(account("o@example.com", reading: reading([("", 50, 50)], at: now - 120), stale: true)).row
+        #expect(stale.banner == nil && stale.inlineBadges == [.stale("2 min ago")])
+    }
+
+    @Test func `the popover row shows the email before its @, and the plan with live under it`() {
+        let live = AccountRowProbe(account("jmulro@gmail.com", live: true)).row
+        #expect(live.name == "jmulro" && live.email == "jmulro@gmail.com" && live.subtitle == "Pro · live")
+        #expect(AccountRowProbe(account("other@gmail.com")).row.subtitle == "Pro")
+        #expect(AccountRowProbe(account("")).row.name == "Unknown account")
+        #expect(AccountRowProbe(account("@example.com")).row.name == "@example.com")
     }
 
     // MARK: F06-AC-6.c11

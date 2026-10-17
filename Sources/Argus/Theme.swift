@@ -49,6 +49,9 @@ struct Theme {
         }
     }
 
+    /// Popover table cells: the bar tinted by its band; its text stays `text` so it reads on every tint.
+    func cellFill(_ band: Band) -> Color { bar(band).opacity(dark ? 0.4 : 0.28) }
+
     static func accent(_ tool: Tool) -> Color {
         switch tool {
         case .claude: Color(hex: 0xC96442)

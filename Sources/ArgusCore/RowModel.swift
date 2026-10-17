@@ -58,9 +58,18 @@ public enum RowBadge: Sendable, Equatable {
     }
 }
 
+/// What stands in for a popover row's cells, spanning the window columns.
+public enum RowBanner: Sendable, Equatable {
+    /// "Needs sign-in", "App needs update", "Incomplete identity", "Unreadable vault entry".
+    case blocked(String)
+    case notFetched
+}
+
 public struct AccountRow: Sendable, Equatable, Identifiable {
     public let id: AccountKey
     public let email: String
+    /// The email before its @: what the popover row shows.
+    public let name: String
     /// Upper case: "MAX", "PRO".
     public let plan: String?
     /// Its allowance request is in flight: the row's refresh arrow spins.
@@ -72,6 +81,10 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
     public let isSaved: Bool
     public let badges: [RowBadge]
     public let groups: [GroupRow]
+    /// Every present window, labelled "5h", "7d" or "<group> 7d": the popover table's cells.
+    public let windows: [WindowCell]
+    /// A blocked state, else "Not fetched yet" without a window; nil → the cells.
+    public let banner: RowBanner?
     /// nil → Switch enabled (live rows show the Live pill instead).
     public let switchDisabledReason: String?
     public let refreshEnabled: Bool
@@ -79,6 +92,8 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
     init(_ account: AccountSnapshot, live: LiveState?, now: Date) {
         id = account.key
         email = account.label.isEmpty ? "Unknown account" : account.label
+        let local = email.prefix { $0 != "@" }
+        name = local.isEmpty ? email : String(local)
         plan = account.plan?.uppercased()
         isFetching = account.fetching
         error = account.error
@@ -107,17 +122,42 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
         groups = readingGroups.isEmpty
             ? [GroupRow(name: nil, fiveHour: WindowCell(label: "5h", window: nil, resetText: "—"), sevenDay: WindowCell(label: "7d", window: nil, resetText: "—"))]
             : readingGroups.map { g in
-                let fiveReset = g.fiveHour == nil && g.sevenDay != nil ? "weekly only" : PopoverText.resetText(g.fiveHour, now: now)
+                let fiveReset = g.fiveHour == nil && g.sevenDay != nil ? "none" : PopoverText.resetText(g.fiveHour, now: now)
                 return GroupRow(name: named && !g.name.isEmpty ? g.name : nil,
                                 fiveHour: WindowCell(label: "5h", window: g.fiveHour, resetText: fiveReset),
                                 sevenDay: WindowCell(label: "7d", window: g.sevenDay, resetText: PopoverText.resetText(g.sevenDay, now: now)))
             }
+        // Claude's first group covers every model, so its columns read plain "5h" / "7d"; agy's groups are model families, all named.
+        windows = readingGroups.enumerated().flatMap { i, g in
+            let prefix = (i > 0 || account.key.tool == .agy) && !g.name.isEmpty ? g.name + " " : ""
+            return [("5h", g.fiveHour), ("7d", g.sevenDay)].compactMap { label, window in
+                window.map { WindowCell(label: prefix + label, window: $0, resetText: PopoverText.resetText($0, now: now)) }
+            }
+        }
+        banner = blocked.map { .blocked($0.1) } ?? (windows.isEmpty ? .notFetched : nil)
         if let live, !live.allowsSwitch {
             switchDisabledReason = live.statusText(account.key.tool)
         } else {
             switchDisabledReason = blocked?.1
         }
         refreshEnabled = account.isLive || blocked == nil
+    }
+
+    /// The line under the popover name: the plan, then "live" for the live account ("Max · live").
+    public var subtitle: String {
+        [plan.flatMap { $0.isEmpty ? nil : $0.capitalized }, isLive ? "live" : nil].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// The badges the popover keeps beside the plan; the rest show as the `banner`.
+    public var inlineBadges: [RowBadge] {
+        badges.filter { if case .stale = $0 { true } else { $0 == .kept } }
+    }
+
+    /// One cell per column of the card's table: the window, "—" over "none" for a window this account lacks, "—" throughout with no reading.
+    public func cells(_ columns: [String]) -> [WindowCell] {
+        columns.map { label in
+            windows.first { $0.label == label } ?? WindowCell(label: label, window: nil, resetText: windows.isEmpty ? "—" : "none")
+        }
     }
 
     /// The lowest present window across groups; nil when there is none.
@@ -145,8 +185,10 @@ public struct ToolCard: Sendable, Equatable {
     public let others: [AccountRow]
     /// Every account, the live one included, by email then id: listed when expanded, so a switch moves only the live mark.
     public let rows: [AccountRow]
-    /// "+N more" collapsed, "Show less" expanded, nil when no other account.
+    /// "+N more" collapsed, "Live only" expanded, nil when no other account.
     public let moreLabel: String?
+    /// The table's window columns, from every row so expanding moves nothing; "5h" and "7d" when no row has a window.
+    public let columns: [String]
     public let suggestion: Suggestion?
     public let unsavedBanner: String?
 
@@ -174,9 +216,14 @@ public struct ToolCard: Sendable, Equatable {
             unsaved = "\(snapshot.tool.displayName) is signed in as \(login.label.isEmpty ? "Unknown account" : login.label), which isn't saved yet."
         }
         let statusText: String? = if let state = snapshot.live, case .signedIn = state { nil } else { snapshot.live?.statusText(snapshot.tool) }
+        // ponytail: the fullest row's order first; rows with disjoint window sets order by whichever comes first.
+        var columns: [String] = []
+        for row in rows.sorted(by: { $0.windows.count > $1.windows.count }) {
+            for cell in row.windows where !columns.contains(cell.label) { columns.append(cell.label) }
+        }
         return ToolCard(tool: snapshot.tool, liveRow: rows.first(where: \.isLive), liveStatusText: statusText,
-                        others: others, rows: rows, moreLabel: others.isEmpty ? nil : expanded ? "Show less" : "+\(others.count) more",
-                        suggestion: suggestion, unsavedBanner: unsaved)
+                        others: others, rows: rows, moreLabel: others.isEmpty ? nil : expanded ? "Live only" : "+\(others.count) more",
+                        columns: columns.isEmpty ? ["5h", "7d"] : columns, suggestion: suggestion, unsavedBanner: unsaved)
     }
 }
 

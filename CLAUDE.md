@@ -41,7 +41,7 @@ Key mechanisms, each spread across several files:
   - agy: its Keychain item and its token file.
 - **Polling and renewal**: `Poller` fetches a batch every 3, 5 or 10 minutes.
   - Requests go out one at a time per vendor, a 429 puts that account into backoff, and minimum gaps persist across restarts in `readings.json`.
-  - Opening the popover calls `rereadLive()`, which re-reads the local live stores and sends no network requests.
+  - Opening the popover reads and sends nothing. Live logins are read by interval batches and the refresh buttons, and `rereadLive()` (local stores only, no network) runs after a switch.
   - `Renewer` (ADR-0002) renews only saved accounts that aren't live; each tool keeps renewing its own live login.
   - The OAuth client IDs live in `OAuthClients.swift` and `Renewal.swift`.
 
