@@ -31,6 +31,8 @@ public struct TaskSleeper: Sleeper {
     let sleeper: any Sleeper
     let now: @Sendable () -> Date
     let renewer: Renewer?
+    /// The last reading per account, kept across launches; nil keeps readings in memory only.
+    let readingsFile: URL?
 
     private var loop: Task<Void, Never>?
     private var batch: Task<Void, Never>?
@@ -46,7 +48,7 @@ public struct TaskSleeper: Sleeper {
     private var claudeBaseline: (bytes: Data, account: Data?)?
 
     public init(state: AppState, tools: [any ToolAdapter], vault: Vault, fetcher: AllowanceFetcher,
-                sleeper: any Sleeper, now: @escaping @Sendable () -> Date, renewer: Renewer? = nil) {
+                sleeper: any Sleeper, now: @escaping @Sendable () -> Date, renewer: Renewer? = nil, readingsFile: URL? = nil) {
         self.state = state
         self.tools = Dictionary(tools.map { ($0.tool, $0) }, uniquingKeysWith: { first, _ in first })
         self.vault = vault
@@ -54,6 +56,27 @@ public struct TaskSleeper: Sleeper {
         self.sleeper = sleeper
         self.now = now
         self.renewer = renewer
+        self.readingsFile = readingsFile
+        loadReadings()
+    }
+
+    private struct SavedReading: Codable {
+        let key: AccountKey
+        let reading: AllowanceReading
+    }
+
+    /// The readings saved at the last launch, shown stale until each account is fetched again.
+    private func loadReadings() {
+        guard let readingsFile, let data = try? Data(contentsOf: readingsFile),
+              let saved = try? JSONDecoder().decode([SavedReading].self, from: data) else { return }
+        for s in saved { state.update(s.key) { $0.reading = s.reading; $0.stale = true } }
+    }
+
+    // ponytail: rewrites every reading per fetch and keeps removed accounts' last reading; fine for a handful of accounts.
+    private func saveReadings() {
+        guard let readingsFile else { return }
+        let saved = state.status.compactMap { key, status in status.reading.map { SavedReading(key: key, reading: $0) } }
+        try? JSONEncoder().encode(saved).write(to: readingsFile, options: .atomic)
     }
 
     /// One batch now, then forever: sleep the interval → batch.
@@ -321,6 +344,7 @@ public struct TaskSleeper: Sleeper {
                 $0.stale = false
                 $0.error = nil
             }
+            saveReadings()
         case .unauthorized:
             state.update(key) { $0.stale = true; $0.error = "HTTP 401" }
         case .failed(let reason):

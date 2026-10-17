@@ -148,7 +148,7 @@ func eventually(_ condition: @Sendable () -> Bool) async -> Bool {
     let renewer: Renewer?
     let poller: Poller
 
-    init(live: [Tool: [LiveState]] = [:], renewing: Bool = false,
+    init(live: [Tool: [LiveState]] = [:], renewing: Bool = false, persistReadings: Bool = false,
          reply: @escaping @Sendable (TestHTTPStub.Request) async -> TestHTTPStub.Reply = okReply) throws {
         box = try TestSandbox(security: ScriptedSecurity([.timedOut]))
         vault = try Vault(supportRoot: box.supportRoot)
@@ -161,7 +161,8 @@ func eventually(_ condition: @Sendable () -> Bool) async -> Bool {
         let adapters = Tool.allCases.map { fakes[$0]! as any ToolAdapter }
         renewer = renewing ? Renewer(http: http, tools: adapters, now: clock.closure) : nil
         let fetcher = AllowanceFetcher(http: http, version: "0.1.0", now: clock.closure)
-        poller = Poller(state: state, tools: adapters, vault: vault, fetcher: fetcher, sleeper: sleeper, now: clock.closure, renewer: renewer)
+        poller = Poller(state: state, tools: adapters, vault: vault, fetcher: fetcher, sleeper: sleeper, now: clock.closure, renewer: renewer,
+                        readingsFile: persistReadings ? box.supportRoot.appending(path: "readings.json") : nil)
     }
 
     @discardableResult

@@ -27,7 +27,7 @@ public struct AllowanceGroup: Sendable, Equatable, Codable {
     }
 }
 
-public struct AllowanceReading: Sendable, Equatable {
+public struct AllowanceReading: Sendable, Equatable, Codable {
     public let groups: [AllowanceGroup]
     /// Codex `plan_type` · otherwise nil.
     public let plan: String?

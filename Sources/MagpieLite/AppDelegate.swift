@@ -56,7 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let state = AppState(defaults: .standard, now: now)
         let poller = Poller(state: state, tools: tools, vault: vault,
                             fetcher: AllowanceFetcher(http: http, version: version, now: now),
-                            sleeper: TaskSleeper(), now: now, renewer: Renewer(http: http, tools: tools, now: now))
+                            sleeper: TaskSleeper(), now: now, renewer: Renewer(http: http, tools: tools, now: now),
+                            readingsFile: supportRoot.appending(path: "readings.json"))
         self.poller = poller
         let switcher = Switcher(env: env, vault: vault, processes: .system)
         let commands = AccountCommands(state: state, poller: poller, vault: vault, tools: tools, switcher: switcher) {

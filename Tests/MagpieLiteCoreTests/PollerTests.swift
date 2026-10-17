@@ -183,6 +183,24 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(rig.tags == ["a"])
     }
 
+    @Test func `the last readings survive a restart, shown stale until fetched again; an unreadable file is ignored`() async throws {
+        let a = testLogin(.claude, "a")
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]], persistReadings: true)
+        await rig.poller.runBatch()
+        let reading = try #require(rig.state.status[testKey(a)]?.reading)
+        let file = rig.box.supportRoot.appending(path: "readings.json")
+        func restart() -> AppState {
+            let state = AppState(defaults: UserDefaults(suiteName: UUID().uuidString)!, now: rig.clock.closure)
+            _ = Poller(state: state, tools: [], vault: rig.vault, fetcher: AllowanceFetcher(http: HTTPClient(session: rig.stub.session), version: "0", now: rig.clock.closure),
+                       sleeper: RecordingSleeper(), now: rig.clock.closure, readingsFile: file)
+            return state
+        }
+        let restored = restart()
+        #expect(restored.status[testKey(a)]?.reading == reading && restored.status[testKey(a)]?.stale == true)
+        try Data("garbage".utf8).write(to: file)
+        #expect(restart().status.isEmpty)
+    }
+
     // MARK: F04-AC-4.c19
 
     @Test func `REQ/F04-AC-4.c19 Refresh live accounts fetches only live logins and leaves the interval timer alone`() async throws {
