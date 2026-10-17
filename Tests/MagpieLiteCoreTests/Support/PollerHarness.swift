@@ -179,3 +179,11 @@ func eventually(_ condition: @Sendable () -> Bool) async -> Bool {
 func isTokenRequest(_ request: TestHTTPStub.Request) -> Bool {
     ["platform.claude.com", "auth.openai.com", "oauth2.googleapis.com"].contains(request.url.host ?? "")
 }
+
+/// Replies in order; the last one repeats.
+final class ReplyScript: @unchecked Sendable {
+    private let lock = NSLock()
+    private var replies: [TestHTTPStub.Reply]
+    init(_ replies: [TestHTTPStub.Reply]) { self.replies = replies }
+    func next() -> TestHTTPStub.Reply { lock.withLock { replies.count > 1 ? replies.removeFirst() : replies[0] } }
+}

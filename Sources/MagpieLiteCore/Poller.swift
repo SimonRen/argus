@@ -211,9 +211,13 @@ public struct TaskSleeper: Sleeper {
 
     private func fetchLive(_ key: AccountKey, _ login: LiveLogin) async {
         guard !skipFetch(key) else { return }
-        guard let token = login.tokens.accessToken, (login.tokens.accessTokenExpiry ?? .distantFuture) > now() else {
-            return state.update(key) { $0.stale = true }
+        var token = login.tokens.accessToken
+        if (login.tokens.accessTokenExpiry ?? .distantFuture) <= now().addingTimeInterval(key.tool == .agy ? 60 : 0) { token = nil }
+        // agy only: an expired live token is replaced by one minted in memory; agy's own login is never written.
+        if token == nil, key.tool == .agy, let renewer, let refresh = login.tokens.refreshToken {
+            token = await renewer.liveAgyAccessToken(key, refreshToken: refresh, clientID: login.clientID)
         }
+        guard let token else { return state.update(key) { $0.stale = true } }
         lastAttempt[key] = now()
         apply(await fetcher.fetch(key.tool, accountKey: key.id, accessToken: token, accountID: login.accountID), to: key)
     }

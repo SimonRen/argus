@@ -16,12 +16,14 @@ public enum RenewalTrigger: Sendable, Equatable {
 public enum RenewalOutcome: Sendable, Equatable { case renewed, skipped(String), refused, transient(String), appNeedsUpdate }
 
 /// Renews saved, non-live logins with each vendor's refresh-token grant. The live login is never renewed here: its tool
-/// owns it.
+/// owns it. agy's live access token alone may be minted in memory (`liveAgyAccessToken`), never stored.
 public actor Renewer {
     let http: HTTPClient
     let tools: [Tool: any ToolAdapter]
     let now: @Sendable () -> Date
     private var blocked: Set<String> = []
+    /// Access tokens minted for agy's live login, per account, with the refresh token they came from.
+    private var minted: [AccountKey: (refresh: String, token: String, expiry: Date)] = [:]
 
     static let claudeURL = URL(string: "https://platform.claude.com/v1/oauth/token")!
     static let claudeClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
@@ -37,6 +39,19 @@ public actor Renewer {
 
     /// Drew `invalid_client` since this renewer was made (i.e. since launch).
     public func isBlocked(clientID: String) -> Bool { blocked.contains(clientID) }
+
+    /// An access token for agy's live login when its own has expired. Google refresh tokens don't turn over, so minting
+    /// one leaves agy's login untouched; it is kept in memory only, reused until a minute before it expires. Nil when
+    /// the client has no embedded secret or the grant fails.
+    public func liveAgyAccessToken(_ key: AccountKey, refreshToken: String, clientID: String?) async -> String? {
+        if let cached = minted[key], cached.refresh == refreshToken, cached.expiry > now().addingTimeInterval(60) { return cached.token }
+        let client = clientID ?? OAuthClients.antigravityClientID
+        guard !blocked.contains(client), let secret = OAuthClients.antigravitySecret(forClientID: client),
+              case .success(let reply) = await googleGrant(refresh: refreshToken, client: client, secret: secret),
+              let access = nonEmpty(reply["access_token"]) else { return nil }
+        minted[key] = (refreshToken, access, now().addingTimeInterval(number(reply["expires_in"]) ?? 3600))
+        return access
+    }
 
     /// Runs in the tool's exclusive section; once sent, the request completes and its result is persisted even if the
     /// caller goes away.
@@ -139,15 +154,11 @@ public actor Renewer {
     }
 
     private func renewAgy(_ payload: Data, refresh: String, client: String, secret: String) async -> Result<Data, RenewalFailure> {
-        var r = URLRequest(url: Self.googleURL)
-        r.httpMethod = "POST"
-        r.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        r.setValue("application/json", forHTTPHeaderField: "Accept")
-        let form = [("grant_type", "refresh_token"), ("refresh_token", refresh), ("client_id", client), ("client_secret", secret)]
-        r.httpBody = Data(form.map { "\($0)=\(Self.formEncoded($1))" }.joined(separator: "&").utf8)
-        switch await http.send(r) {
-        case .response(200, _, let body):
-            guard let reply = jsonObject(body), let access = nonEmpty(reply["access_token"]),
+        switch await googleGrant(refresh: refresh, client: client, secret: secret) {
+        case .failure(let failure):
+            return .failure(failure)
+        case .success(let reply):
+            guard let access = nonEmpty(reply["access_token"]),
                   case .object(var json)? = agyPayload(payload) else { return .failure(.transient("unexpected reply")) }
             var token = json["token"] as? [String: Any] ?? [:]
             token["access_token"] = access
@@ -160,6 +171,21 @@ public actor Renewer {
             json["token"] = token
             if let id = nonEmpty(reply["id_token"]) { json["id_token"] = id }
             return Self.serialized(json).map { Data(("go-keyring-base64:" + $0.base64EncodedString()).utf8) }
+        }
+    }
+
+    /// Google's refresh-token grant for `client`. -> the reply object; `invalid_client` blocks the client until relaunch.
+    private func googleGrant(refresh: String, client: String, secret: String) async -> Result<[String: Any], RenewalFailure> {
+        var r = URLRequest(url: Self.googleURL)
+        r.httpMethod = "POST"
+        r.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        r.setValue("application/json", forHTTPHeaderField: "Accept")
+        let form = [("grant_type", "refresh_token"), ("refresh_token", refresh), ("client_id", client), ("client_secret", secret)]
+        r.httpBody = Data(form.map { "\($0)=\(Self.formEncoded($1))" }.joined(separator: "&").utf8)
+        switch await http.send(r) {
+        case .response(200, _, let body):
+            guard let reply = jsonObject(body) else { return .failure(.transient("unexpected reply")) }
+            return .success(reply)
         case .response(let status, _, let body) where status == 400 || status == 401:
             let error = jsonObject(body)?["error"]
             if Self.errorCode(error) == "invalid_client" {

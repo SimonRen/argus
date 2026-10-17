@@ -138,6 +138,43 @@ fileprivate func agyInner(_ envelope: VaultEnvelope?) -> [String: Any]? {
         #expect(rig.tags == ["a", "a"])
     }
 
+    @Test func `REQ/F04-AC-4.c13 an expired live agy token is replaced in memory, reused, and nothing is written`() async throws {
+        let expired = agyLogin("a", client: OAuthClients.antigravityClientID, expiry: Date(timeIntervalSince1970: 1_000))
+        let grants = ReplyScript([.json(200, #"{"access_token":"test-access-m1","expires_in":3600}"#),
+                                  .json(200, #"{"access_token":"test-access-m2","expires_in":3600}"#)])
+        let rig = try PollerRig(live: [.agy: [.signedIn(expired)]], renewing: true) { request in
+            isTokenRequest(request) ? grants.next() : okReply(request)
+        }
+        let key = try await rig.save(expired)
+        let file = rig.box.supportRoot.appending(path: "vault/agy/\(key.id).json")
+        let before = try Data(contentsOf: file)
+        await rig.poller.runBatch()
+        #expect(rig.tokenRequests.count == 1 && rig.tokenRequests.first?.url.host == "oauth2.googleapis.com")
+        #expect(Set(rig.tags) == ["m1"])
+        #expect(rig.state.status[key]?.reading != nil && rig.state.status[key]?.stale == false)
+        rig.clock.advance(300)
+        await rig.poller.runBatch()
+        #expect(rig.tokenRequests.count == 1 && Set(rig.tags) == ["m1"])
+        rig.clock.advance(3300)
+        await rig.poller.runBatch()
+        #expect(rig.tokenRequests.count == 2 && rig.tags.last == "m2")
+        #expect(try Data(contentsOf: file) == before)
+        #expect(await rig.tools[.agy]!.readLive() == .signedIn(expired))
+    }
+
+    @Test func `REQ/F04-AC-4.c13 a failed agy grant leaves the live row stale and unflagged, and Claude never mints`() async throws {
+        let agy = agyLogin("a", client: OAuthClients.antigravityClientID, expiry: Date(timeIntervalSince1970: 1_000))
+        let claude = testLogin(.claude, "c", expiry: Date(timeIntervalSince1970: 1_000))
+        let rig = try PollerRig(live: [.agy: [.signedIn(agy)], .claude: [.signedIn(claude)]], renewing: true) { request in
+            isTokenRequest(request) ? .json(400, #"{"error":"invalid_grant"}"#) : okReply(request)
+        }
+        await rig.poller.runBatch()
+        #expect(rig.tokenRequests.map { $0.url.host } == ["oauth2.googleapis.com"])
+        #expect(rig.tags.isEmpty)
+        #expect(rig.state.status[testKey(agy)]?.stale == true && rig.state.status[testKey(agy)]?.flag == .ok)
+        #expect(rig.state.status[testKey(claude)]?.stale == true)
+    }
+
     // MARK: F04-AC-4.c8
 
     @Test func `REQ/F04-AC-4.c8 a sent renewal completes and persists even when its caller is cancelled`() async throws {

@@ -348,11 +348,3 @@ fileprivate final class DoneFlag: @unchecked Sendable {
     func set() { lock.withLock { value = true } }
     var done: Bool { lock.withLock { value } }
 }
-
-/// Replies in order; the last one repeats.
-fileprivate final class ReplyScript: @unchecked Sendable {
-    private let lock = NSLock()
-    private var replies: [TestHTTPStub.Reply]
-    init(_ replies: [TestHTTPStub.Reply]) { self.replies = replies }
-    func next() -> TestHTTPStub.Reply { lock.withLock { replies.count > 1 ? replies.removeFirst() : replies[0] } }
-}
