@@ -6,6 +6,12 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+### Changed
+
+- Account lists keep their order when you switch: the expanded popover card and the manager list every account by email,
+  and only the Live mark moves.
+- New app icon: a flat amber hourglass on ink indigo inside an open allowance ring.
+
 ## [0.1.0] - 2026-10-17
 
 ### Added

@@ -156,7 +156,7 @@ struct ManagerView: View {
     private func detail(_ t: Theme, now: Date) -> some View {
         let snapshot = state.snapshot(selected)
         let card = ToolCard.build(snapshot, expanded: true, dismissedUnsavedKey: nil, now: now)
-        let rows = ([card.liveRow].compactMap { $0 } + card.others)
+        let rows = card.rows
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 12) {

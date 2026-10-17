@@ -160,9 +160,11 @@ struct CardView: View {
                 }
             }
             .padding(EdgeInsets(top: 8, leading: 12, bottom: 6, trailing: 12))
-            if let live = card.liveRow {
+            // Expanded lists every account in a fixed order, the live one in place; collapsed shows only the live one.
+            let expanded = card.moreLabel == "Show less"
+            if let live = card.liveRow, !expanded {
                 RowView(row: live, tool: card.tool, suggestion: card.suggestion, theme: t, actions: actions)
-            } else if let status = card.liveStatusText {
+            } else if card.liveRow == nil, let status = card.liveStatusText {
                 HStack {
                     Text(status).font(.system(size: 12)).foregroundStyle(t.sub)
                     Spacer()
@@ -170,8 +172,8 @@ struct CardView: View {
                 .padding(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                 .overlay(alignment: .top) { t.hair.frame(height: 1) }
             }
-            if card.moreLabel == "Show less" {
-                ForEach(card.others) { RowView(row: $0, tool: card.tool, suggestion: nil, theme: t, actions: actions) }
+            if expanded {
+                ForEach(card.rows) { RowView(row: $0, tool: card.tool, suggestion: $0.isLive ? card.suggestion : nil, theme: t, actions: actions) }
             }
         }
         .background(t.card)

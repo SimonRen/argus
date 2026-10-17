@@ -53,6 +53,15 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
         #expect(card(snapshot([account("live@example.com", live: true)])).moreLabel == nil)
     }
 
+    @Test func `the expanded list keeps its order across a switch, only the live mark moves`() {
+        let before = card(snapshot([account("zed@example.com"), account("amy@example.com", live: true), account("bob@example.com")]), expanded: true)
+        let after = card(snapshot([account("zed@example.com", live: true), account("amy@example.com"), account("bob@example.com")]), expanded: true)
+        let order = ["amy@example.com", "bob@example.com", "zed@example.com"]
+        #expect(before.rows.map(\.id.id) == order && after.rows.map(\.id.id) == order)
+        #expect(before.rows.map(\.isLive) == [true, false, false] && after.rows.map(\.isLive) == [false, false, true])
+        #expect(after.liveRow?.id.id == "zed@example.com" && after.others.map(\.id.id) == ["amy@example.com", "bob@example.com"])
+    }
+
     @Test func `REQ/F06-AC-6.c2 a tool that is not signed in shows its status instead of a live row`() {
         let c = card(snapshot([account("a@example.com")], live: .notSignedIn))
         #expect(c.liveRow == nil && c.liveStatusText == "Not signed in" && c.moreLabel == "+1 more")

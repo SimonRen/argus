@@ -141,8 +141,10 @@ public struct ToolCard: Sendable, Equatable {
     public let liveRow: AccountRow?
     /// `LiveState.statusText` when not signed in / wiped / unknown / unsupported.
     public let liveStatusText: String?
-    /// The other accounts, listed when expanded.
+    /// The accounts other than the live one, in `rows` order.
     public let others: [AccountRow]
+    /// Every account, the live one included, by email then id: listed when expanded, so a switch moves only the live mark.
+    public let rows: [AccountRow]
     /// "+N more" collapsed, "Show less" expanded, nil when no other account.
     public let moreLabel: String?
     public let suggestion: Suggestion?
@@ -150,9 +152,10 @@ public struct ToolCard: Sendable, Equatable {
 
     public static func build(_ snapshot: ToolSnapshot, expanded: Bool, dismissedUnsavedKey: String?, now: Date) -> ToolCard {
         let live = snapshot.accounts.first(where: \.isLive)
-        let rest = snapshot.accounts.filter { !$0.isLive }
-            .sorted { ($0.label.lowercased(), $0.key.id) < ($1.label.lowercased(), $1.key.id) }
-        let others = rest.map { AccountRow($0, live: snapshot.live, now: now) }
+        let ordered = snapshot.accounts.sorted { ($0.label.lowercased(), $0.key.id) < ($1.label.lowercased(), $1.key.id) }
+        let rest = ordered.filter { !$0.isLive }
+        let rows = ordered.map { AccountRow($0, live: snapshot.live, now: now) }
+        let others = rows.filter { !$0.isLive }
         var suggestion: Suggestion?
         if let live, !live.stale, let score = AccountRow.score(live), Int(score.rounded()) < 15 {
             var best: (AccountSnapshot, Double)?
@@ -171,8 +174,8 @@ public struct ToolCard: Sendable, Equatable {
             unsaved = "\(snapshot.tool.displayName) is signed in as \(login.label.isEmpty ? "Unknown account" : login.label), which isn't saved yet."
         }
         let statusText: String? = if let state = snapshot.live, case .signedIn = state { nil } else { snapshot.live?.statusText(snapshot.tool) }
-        return ToolCard(tool: snapshot.tool, liveRow: live.map { AccountRow($0, live: snapshot.live, now: now) }, liveStatusText: statusText,
-                        others: others, moreLabel: others.isEmpty ? nil : expanded ? "Show less" : "+\(others.count) more",
+        return ToolCard(tool: snapshot.tool, liveRow: rows.first(where: \.isLive), liveStatusText: statusText,
+                        others: others, rows: rows, moreLabel: others.isEmpty ? nil : expanded ? "Show less" : "+\(others.count) more",
                         suggestion: suggestion, unsavedBanner: unsaved)
     }
 }
