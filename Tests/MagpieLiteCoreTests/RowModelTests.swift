@@ -46,6 +46,7 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
                         account("live@example.com", live: true), account("amy@example.com")]
         let collapsed = card(snapshot(accounts))
         #expect(collapsed.liveRow?.email == "live@example.com" && collapsed.liveRow?.isLive == true)
+        #expect(collapsed.liveRow?.plan == "PRO")
         #expect(collapsed.moreLabel == "+4 more")
         #expect(collapsed.others.map(\.id.id) == ["amy@example.com", "b1", "b2", "zed@example.com"])
         #expect(card(snapshot(accounts), expanded: true).moreLabel == "Show less")

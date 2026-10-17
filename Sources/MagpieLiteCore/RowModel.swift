@@ -51,6 +51,7 @@ public enum RowBadge: Sendable, Equatable { case stale(String), needsSignIn, app
 public struct AccountRow: Sendable, Equatable, Identifiable {
     public let id: AccountKey
     public let email: String
+    /// Upper case: "MAX", "PRO".
     public let plan: String?
     public let isLive: Bool
     public let isSaved: Bool
@@ -63,7 +64,7 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
     init(_ account: AccountSnapshot, live: LiveState?, now: Date) {
         id = account.key
         email = account.label.isEmpty ? "Unknown account" : account.label
-        plan = account.plan
+        plan = account.plan?.uppercased()
         isLive = account.isLive
         isSaved = account.isSaved
         var badges: [RowBadge] = []
