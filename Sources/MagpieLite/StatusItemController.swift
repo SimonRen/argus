@@ -82,7 +82,8 @@ import Observation
 
     // MARK: - Drawing (DEC-10)
 
-    private static let padding: CGFloat = 8, mark: CGFloat = 14, gap: CGFloat = 4, spacing: CGFloat = 10, height: CGFloat = 22
+    /// `mark` is the letter fallback's box; a tool icon takes the standard 18 pt menubar size.
+    private static let padding: CGFloat = 8, mark: CGFloat = 14, iconMark: CGFloat = 18, gap: CGFloat = 4, spacing: CGFloat = 10, height: CGFloat = 22
     private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold)
     private static let letterFont = NSFont.systemFont(ofSize: 8.5, weight: .heavy)
 
@@ -104,13 +105,14 @@ import Observation
         let widths = summary.segments.map { segment in
             max(width(segment.fiveHour.text), width(segment.sevenDay.text))
         }
-        let total = padding * 2 + widths.reduce(0) { $0 + mark + gap + $1 } + spacing * CGFloat(max(0, widths.count - 1))
         let glyphs = summary.segments.map { ToolIcon.glyph($0.tool).map { tinted($0, label) } }
+        let marks = glyphs.map { $0 == nil ? mark : iconMark }
+        let total = padding * 2 + zip(marks, widths).reduce(0) { $0 + $1.0 + gap + $1.1 } + spacing * CGFloat(max(0, widths.count - 1))
         let image = NSImage(size: NSSize(width: ceil(total), height: height), flipped: false) { _ in
             var x = padding
-            for ((segment, valueWidth), glyph) in zip(zip(summary.segments, widths), glyphs) {
+            for (((segment, valueWidth), glyph), markWidth) in zip(zip(zip(summary.segments, widths), glyphs), marks) {
                 if let glyph {
-                    glyph.draw(in: NSRect(x: x, y: (height - mark) / 2, width: mark, height: mark))
+                    glyph.draw(in: NSRect(x: x, y: (height - iconMark) / 2, width: iconMark, height: iconMark))
                 } else {
                     let square = NSRect(x: x + 0.75, y: (height - mark) / 2 + 0.75, width: mark - 1.5, height: mark - 1.5)
                     let path = NSBezierPath(roundedRect: square, xRadius: 4, yRadius: 4)
@@ -121,7 +123,7 @@ import Observation
                     let size = letter.size()
                     letter.draw(at: NSPoint(x: x + (mark - size.width) / 2, y: (height - size.height) / 2))
                 }
-                x += mark + gap
+                x += markWidth + gap
                 for (value, top) in [(segment.fiveHour, true), (segment.sevenDay, false)] {
                     let color = value.severity == .low ? low : label
                     let text = NSAttributedString(string: value.text, attributes: [.font: valueFont, .foregroundColor: color])
