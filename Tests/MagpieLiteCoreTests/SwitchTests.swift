@@ -297,7 +297,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         })
         let writesBefore = f.writes.count
         let outcome = await f.switcher(faults: faults, env: env).switchTo(target)
-        #expect(outcome == .switched(notice: "Claude Code now signs in as b@example.com. New sessions use it; running ones follow within about 30 s.", offersRestart: false))
+        #expect(outcome == .switched(notice: "Claude Code now signs in as b@example.com. New sessions use it; running ones follow within about 30 s.", daemonRunning: false))
         #expect(probe.heldAtFirstRead == true)
         #expect(await heldAtVerify.value == true)
         #expect(locks.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
@@ -386,7 +386,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         try f.box.write("codex/sessions/s1.jsonl", "{\"x\":1}\n")
         let others = ["config.toml", "sessions/s1.jsonl"].map { try? Data(contentsOf: f.box.codexHome.appending(path: $0)) }
         let outcome = await f.switcher().switchTo(target)
-        #expect(outcome == .switched(notice: "Codex now signs in as b@example.com.", offersRestart: false))
+        #expect(outcome == .switched(notice: "Codex now signs in as b@example.com.", daemonRunning: false))
         #expect(try Data(contentsOf: f.authURL) == utf8(codexAuth("b")))
         #expect((try FileManager.default.attributesOfItem(atPath: f.authURL.path))[.posixPermissions] as? Int == 0o600)
         #expect(["config.toml", "sessions/s1.jsonl"].map { try? Data(contentsOf: f.box.codexHome.appending(path: $0)) } == others)
@@ -404,7 +404,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         try f.box.write("home/.gemini/antigravity-cli/settings.json", #"{"modelProvider":"gemini","theme":"dark","n":2}"#)
         let readsBefore = (f.box.guarded?.calls ?? []).count
         let outcome = await f.switcher().switchTo(target)
-        #expect(outcome == .switched(notice: "Antigravity CLI now signs in as b@example.com from its next session.", offersRestart: false))
+        #expect(outcome == .switched(notice: "Antigravity CLI now signs in as b@example.com from its next session.", daemonRunning: false))
         #expect(await f.agyKeychain() == .found(utf8(agyValue("b"))))
         let tokenFile = f.agyFolder.appending(path: "antigravity-oauth-token")
         #expect(try Data(contentsOf: tokenFile) == utf8(agyInner("b")))
@@ -553,14 +553,14 @@ fileprivate final class Fixture: @unchecked Sendable {
 
     // MARK: F03-AC-3.c14
 
-    @Test func `REQ/F03-AC-3.c14 a Codex switch names a running daemon or desktop app and offers Restart for the daemon`() async throws {
+    @Test func `REQ/F03-AC-3.c14 a Codex switch reports a running daemon and names a running desktop app`() async throws {
         let daemon = "77 /opt/homebrew/bin/codex app-server --managed-daemon"
         let desktop = "501 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex -c features.code_mode_host=true app-server --analytics-default-enabled"
         let cases: [([String], SwitchOutcome)] = [
-            ([daemon], .switched(notice: "Codex now signs in as b@example.com. The running Codex app-server still uses the previous account.", offersRestart: true)),
-            ([desktop], .switched(notice: "Codex now signs in as b@example.com. The running Codex desktop app still uses the previous account.", offersRestart: false)),
-            ([daemon, desktop], .switched(notice: "Codex now signs in as b@example.com. The running Codex app-server and Codex desktop app still use the previous account.", offersRestart: true)),
-            ([], .switched(notice: "Codex now signs in as b@example.com.", offersRestart: false)),
+            ([daemon], .switched(notice: "Codex now signs in as b@example.com.", daemonRunning: true)),
+            ([desktop], .switched(notice: "Codex now signs in as b@example.com. The running Codex desktop app still uses the previous account.", daemonRunning: false)),
+            ([daemon, desktop], .switched(notice: "Codex now signs in as b@example.com. The running Codex desktop app still uses the previous account.", daemonRunning: true)),
+            ([], .switched(notice: "Codex now signs in as b@example.com.", daemonRunning: false)),
         ]
         for (lines, expected) in cases {
             let f = try Fixture()
@@ -598,12 +598,12 @@ fileprivate final class Fixture: @unchecked Sendable {
         let claudeTarget = try await f.saveLive(.claude)
         try await f.seedClaude("a")
         #expect(await f.switcher().switchTo(claudeTarget) == .switched(
-            notice: "Claude Code now signs in as b@example.com. New sessions use it; running ones follow within about 30 s.", offersRestart: false))
+            notice: "Claude Code now signs in as b@example.com. New sessions use it; running ones follow within about 30 s.", daemonRunning: false))
         await f.seedAgy("b")
         let agyTarget = try await f.saveLive(.agy)
         await f.seedAgy("a")
         #expect(await f.switcher().switchTo(agyTarget) == .switched(
-            notice: "Antigravity CLI now signs in as b@example.com from its next session.", offersRestart: false))
+            notice: "Antigravity CLI now signs in as b@example.com from its next session.", daemonRunning: false))
     }
 
     @Test func `Restart only trusts the kernel's executable path for a daemon pid`() {

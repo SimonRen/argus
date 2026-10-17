@@ -22,7 +22,7 @@ public struct SwitchFaults: Sendable {
 }
 
 public enum SwitchOutcome: Sendable, Equatable {
-    case switched(notice: String, offersRestart: Bool)
+    case switched(notice: String, daemonRunning: Bool)
     case noOp
     /// Nothing written.
     case refused(String)
@@ -110,7 +110,8 @@ public enum CodexDaemon {
     public static func restart(executable: URL, codexHome: URL) async -> String? {
         // `env` adds CODEX_HOME to the inherited environment.
         let outcome = await SecurityCLI(executable: URL(fileURLWithPath: "/usr/bin/env"))
-            .run(arguments: ["CODEX_HOME=\(codexHome.path)", executable.path, "app-server", "daemon", "restart"], stdin: nil, timeout: .seconds(30))
+            // Codex drains running turns first (grace up to 300 s) and allows itself 300 + 75 s; killing it mid-drain leaves no app-server.
+            .run(arguments: ["CODEX_HOME=\(codexHome.path)", executable.path, "app-server", "daemon", "restart"], stdin: nil, timeout: .seconds(375))
         switch outcome {
         case .exited(0, _, _): return nil
         case .exited(let status, let out, let err):
@@ -383,19 +384,15 @@ public struct Switcher: Sendable {
         let email = target.label
         switch target.tool {
         case .claude:
-            return .switched(notice: "Claude Code now signs in as \(email). New sessions use it; running ones follow within about 30 s.", offersRestart: false)
+            return .switched(notice: "Claude Code now signs in as \(email). New sessions use it; running ones follow within about 30 s.", daemonRunning: false)
         case .agy:
-            return .switched(notice: "Antigravity CLI now signs in as \(email) from its next session.", offersRestart: false)
+            return .switched(notice: "Antigravity CLI now signs in as \(email) from its next session.", daemonRunning: false)
         case .codex:
             let lines = processes.lines()
             let daemon = CodexProcesses.daemonRunning(lines), desktop = CodexProcesses.desktopAppRunning(lines)
-            let suffix = switch (daemon, desktop) {
-            case (true, true): " The running Codex app-server and Codex desktop app still use the previous account."
-            case (true, false): " The running Codex app-server still uses the previous account."
-            case (false, true): " The running Codex desktop app still uses the previous account."
-            case (false, false): ""
-            }
-            return .switched(notice: "Codex now signs in as \(email).\(suffix)", offersRestart: daemon)
+            // The app-server is restarted by the caller (AccountCommands); only the desktop app is left to name.
+            let suffix = desktop ? " The running Codex desktop app still uses the previous account." : ""
+            return .switched(notice: "Codex now signs in as \(email).\(suffix)", daemonRunning: daemon)
         }
     }
 }

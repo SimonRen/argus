@@ -82,7 +82,7 @@ import MagpieLiteCore
         try rig.box.write("codex/auth.json", auth("a"))
         let cmds = commands(rig)
         let outcome = await cmds.switchTo(AccountKey(tool: .codex, id: target.identity.fileID))
-        #expect(outcome == .switched(notice: "Codex now signs in as b@example.com.", offersRestart: false))
+        #expect(outcome == .switched(notice: "Codex now signs in as b@example.com.", daemonRunning: false))
         #expect(cmds.notice == "Codex now signs in as b@example.com.")
         #expect(rig.state.lastLiveFetch != nil)
         #expect(rig.state.entries[.codex]?.count == 2)
@@ -90,5 +90,36 @@ import MagpieLiteCore
         #expect(cmds.notice == nil)
         #expect(await cmds.switchTo(AccountKey(tool: .codex, id: "gone")) == .refused("That saved account is gone."))
         #expect(cmds.notice == "That saved account is gone.")
+    }
+
+    @Test func `REQ/F03-AC-3.c14 a Codex switch with the app-server running restarts it at once and says how it went`() async throws {
+        func auth(_ tag: String) -> String {
+            let id = testJWT(["email": "\(tag)@example.com", "https://api.openai.com/auth": ["chatgpt_account_id": "acct-\(tag)"]])
+            return #"{"auth_mode":"chatgpt","tokens":{"id_token":"\#(id)","access_token":"test-access-\#(tag)","refresh_token":"test-refresh-\#(tag)"}}"#
+        }
+        let lead = "Codex now signs in as b@example.com."
+        for failure in [nil, "timed out"] as [String?] {
+            let rig = try PollerRig()
+            try rig.box.write("codex/auth.json", auth("b"))
+            let target = try await rig.vault.save(await CodexTool(env: rig.box.env).readLive())
+            try rig.box.write("codex/auth.json", auth("a"))
+            let gate = TestGate()
+            let switcher = Switcher(env: rig.box.env, vault: rig.vault, processes: ProcessListing { ["77 /opt/homebrew/bin/codex app-server --managed-daemon"] })
+            let cmds = AccountCommands(state: rig.state, poller: rig.poller, vault: rig.vault, tools: Tool.allCases.map { rig.tools[$0]! },
+                                       switcher: switcher, restartDaemon: { await gate.wait(); return failure })
+            let switching = Task { await cmds.switchTo(AccountKey(tool: .codex, id: target.identity.fileID)) }
+            while cmds.notice == nil { await Task.yield() }
+            #expect(cmds.notice == lead + " Restarting the Codex app-server so open sessions move over; a running reply gets up to a minute to finish.")
+            #expect(!cmds.offersRestart)
+            await gate.release()
+            #expect(await switching.value == .switched(notice: lead, daemonRunning: true))
+            if let failure {
+                #expect(cmds.notice == lead + " The Codex app-server didn't restart (\(failure)), so it still uses the previous account.")
+                #expect(cmds.offersRestart)
+            } else {
+                #expect(cmds.notice == lead + " Restarted the Codex app-server; open sessions reconnect on their own.")
+                #expect(!cmds.offersRestart)
+            }
+        }
     }
 }

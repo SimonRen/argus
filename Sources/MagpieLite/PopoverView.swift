@@ -74,7 +74,7 @@ struct PopoverView: View {
                     Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold)).foregroundStyle(t.text).rotationEffect(angle)
                         .frame(width: 30, height: 30).background(t.btn, in: RoundedRectangle(cornerRadius: 9))
                 }
-                .buttonStyle(.plain).help("Refresh live accounts").accessibilityLabel("Refresh live accounts")
+                .buttonStyle(HoverStyle(filled: AnyShape(RoundedRectangle(cornerRadius: 9)))).help("Refresh live accounts").accessibilityLabel("Refresh live accounts")
                 SquareButton(symbol: "macwindow", help: "Open manager window", theme: t, action: openManager)
             }
         }
@@ -103,10 +103,10 @@ struct PopoverView: View {
     private func footer(_ t: Theme) -> some View {
         HStack {
             Button("Manage accounts…", action: openManager)
-                .buttonStyle(.plain).font(.system(size: 12, weight: .semibold)).foregroundStyle(t.link)
+                .buttonStyle(HoverStyle.text).font(.system(size: 12, weight: .semibold)).foregroundStyle(t.link)
             Spacer()
             Button("Quit") { NSApp.terminate(nil) }
-                .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(t.sub)
+                .buttonStyle(HoverStyle.text).font(.system(size: 12)).foregroundStyle(t.sub)
         }
         .padding(EdgeInsets(top: 8, leading: 16, bottom: 10, trailing: 16))
     }
@@ -153,7 +153,7 @@ struct CardView: View {
                         }
                         .font(.system(size: 11, weight: .semibold)).foregroundStyle(t.sub)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(HoverStyle.text)
                     .accessibilityLabel(more == "Show less" ? "Hide other \(card.tool.displayName) accounts" : "Show other \(card.tool.displayName) accounts")
                 }
             }
@@ -209,7 +209,7 @@ struct RowView: View {
                 RefreshButton(action: { await actions.refresh(row.id) }, active: row.isFetching) { angle in
                     Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .bold)).rotationEffect(angle).frame(width: 22, height: 22)
                 }
-                .buttonStyle(.plain).foregroundStyle(t.sub).disabled(!row.refreshEnabled).opacity(row.refreshEnabled ? 1 : 0.4)
+                .buttonStyle(HoverStyle()).foregroundStyle(t.sub).disabled(!row.refreshEnabled).opacity(row.refreshEnabled ? 1 : 0.4)
                 .help("Refresh this account").accessibilityLabel("Refresh \(tool.displayName) \(row.email)")
             }
             .frame(height: 22)
@@ -370,7 +370,39 @@ struct PillButton: View {
             Text(title).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(foreground)
                 .padding(.horizontal, 10).frame(height: 22).background(fill, in: Capsule())
         }
-        .buttonStyle(.plain).disabled(disabled).opacity(disabled ? 0.4 : 1)
+        .buttonStyle(HoverStyle(filled: AnyShape(Capsule()))).disabled(disabled).opacity(disabled ? 0.4 : 1)
+    }
+}
+
+/// The popover's buttons: lit while hovered, darker while pressed, with the pointing-hand cursor; nothing while disabled.
+/// A filled button is lit over its own shape; a bare one gets a soft rounded background `inset` beyond its label.
+struct HoverStyle: ButtonStyle {
+    var filled: AnyShape?
+    var inset = EdgeInsets()
+
+    /// A text button: the highlight reaches a little past the words.
+    static let text = HoverStyle(inset: EdgeInsets(top: -3, leading: -6, bottom: -3, trailing: -6))
+
+    func makeBody(configuration: Configuration) -> some View { HoverBody(configuration: configuration, style: self) }
+
+    private struct HoverBody: View {
+        let configuration: Configuration
+        let style: HoverStyle
+        @State private var hovering = false
+        @Environment(\.isEnabled) private var enabled
+
+        var body: some View {
+            let tint = Color.primary.opacity(!enabled ? 0 : configuration.isPressed ? 0.2 : hovering ? 0.1 : 0)
+            configuration.label
+                .background {
+                    if style.filled == nil { RoundedRectangle(cornerRadius: 6).fill(tint).padding(style.inset) }
+                }
+                .overlay { if let shape = style.filled { shape.fill(tint) } }
+                .contentShape(Rectangle())
+                .onHover { hovering = $0 }
+                .pointerStyle(enabled ? .link : nil)
+                .animation(.easeOut(duration: 0.12), value: hovering)
+        }
     }
 }
 
@@ -385,7 +417,7 @@ struct SquareButton: View {
             Image(systemName: symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
                 .frame(width: 30, height: 30).background(theme.btn, in: RoundedRectangle(cornerRadius: 9))
         }
-        .buttonStyle(.plain).help(help).accessibilityLabel(help)
+        .buttonStyle(HoverStyle(filled: AnyShape(RoundedRectangle(cornerRadius: 9)))).help(help).accessibilityLabel(help)
     }
 }
 
@@ -455,7 +487,7 @@ struct NoticeView<Extra: View>: View {
                 Button(action: onDismiss) {
                     Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 22, height: 22)
                 }
-                .buttonStyle(.plain).foregroundStyle(theme.sub).accessibilityLabel("Dismiss")
+                .buttonStyle(HoverStyle()).foregroundStyle(theme.sub).accessibilityLabel("Dismiss")
             }
         }
         .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 10))

@@ -71,7 +71,8 @@ public enum SaveResult: Sendable, Equatable {
         await poller.reloadVault()
         await poller.refreshLive()
         switch outcome {
-        case .switched(let text, let restart): show(text, offersRestart: restart)
+        case .switched(let text, let daemonRunning) where daemonRunning && restartDaemon != nil: await restartCodexDaemon(after: text)
+        case .switched(let text, _): show(text)
         case .refused(let text), .failed(let text): show(text)
         case .noOp: break
         }
@@ -108,13 +109,19 @@ public enum SaveResult: Sendable, Equatable {
         offersRestart = false
     }
 
-    /// Restarts the running Codex app-server so it picks up the new login.
-    public func restartCodexDaemon() async {
+    /// Restarts the running Codex app-server so it picks up the new login; `lead` is the switch notice it follows.
+    /// A failure offers Restart again; a notice shown meanwhile is left in place.
+    public func restartCodexDaemon(after lead: String? = nil) async {
         guard let restartDaemon else { return }
-        if let failure = await restartDaemon() {
-            show("Couldn't restart the Codex app-server: \(failure)")
+        let prefix = lead.map { $0 + " " } ?? ""
+        let pending = prefix + "Restarting the Codex app-server so open sessions move over; a running reply gets up to a minute to finish."
+        show(pending)
+        let failure = await restartDaemon()
+        guard notice == pending else { return }
+        if let failure {
+            show(prefix + "The Codex app-server didn't restart (\(failure)), so it still uses the previous account.", offersRestart: true)
         } else {
-            show("Restarted the Codex app-server.")
+            show(prefix + "Restarted the Codex app-server; open sessions reconnect on their own.")
         }
     }
 
