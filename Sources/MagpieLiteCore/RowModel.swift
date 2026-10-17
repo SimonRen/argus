@@ -46,7 +46,17 @@ public struct GroupRow: Sendable, Equatable {
     }
 }
 
-public enum RowBadge: Sendable, Equatable { case stale(String), needsSignIn, appNeedsUpdate, incomplete, unreadable, kept }
+public enum RowBadge: Sendable, Equatable {
+    case stale(String), notFetched, needsSignIn, appNeedsUpdate, incomplete, unreadable, kept
+
+    /// Stale or not fetched: its tooltip says why (`PopoverText.problem`).
+    public var isFetchProblem: Bool {
+        switch self {
+        case .stale, .notFetched: true
+        default: false
+        }
+    }
+}
 
 public struct AccountRow: Sendable, Equatable, Identifiable {
     public let id: AccountKey
@@ -55,6 +65,9 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
     public let plan: String?
     /// Its allowance request is in flight: the row's refresh arrow spins.
     public let isFetching: Bool
+    /// For the stale / not-fetched badge's tooltip (`PopoverText.problem`).
+    public let error: String?
+    public let retryAt: Date?
     public let isLive: Bool
     public let isSaved: Bool
     public let badges: [RowBadge]
@@ -68,10 +81,16 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
         email = account.label.isEmpty ? "Unknown account" : account.label
         plan = account.plan?.uppercased()
         isFetching = account.fetching
+        error = account.error
+        retryAt = account.retryAt
         isLive = account.isLive
         isSaved = account.isSaved
         var badges: [RowBadge] = []
-        if account.stale, let reading = account.reading { badges.append(.stale(PopoverText.age(since: reading.fetchedAt, now: now))) }
+        if account.stale, let reading = account.reading {
+            badges.append(.stale(PopoverText.age(since: reading.fetchedAt, now: now)))
+        } else if account.stale, account.flag == .ok {
+            badges.append(.notFetched)   // a blocked state's own badge already says why
+        }
         let blocked: (RowBadge, String)? = switch account.flag {
         case .needsSignIn: (.needsSignIn, "Needs sign-in")
         case .appNeedsUpdate: (.appNeedsUpdate, "App needs update")
@@ -184,21 +203,35 @@ public enum PopoverText {
         return "Live updated \(age(since: lastLiveFetch, now: now)) · every \(intervalMinutes) min"
     }
 
+    /// Why an account's reading is stale or missing: its stale / not-fetched badge's tooltip.
+    public static func problem(tool: Tool, error: String?, retryAt: Date?, now: Date, timeZone: TimeZone) -> String {
+        if let retryAt, retryAt > now { return "Rate limited by \(vendor(tool)). Next try at \(clock(retryAt, timeZone))." }
+        if let error { return "Couldn't refresh: \(error)." }
+        return "Not refreshed this time."
+    }
+
+    private static func vendor(_ tool: Tool) -> String {
+        switch tool {
+        case .claude: "Claude"
+        case .codex: "Codex"
+        case .agy: "Antigravity"
+        }
+    }
+
+    private static func clock(_ date: Date, _ timeZone: TimeZone) -> String {
+        let clock = DateFormatter()
+        clock.locale = Locale(identifier: "en_US_POSIX")
+        clock.timeZone = timeZone
+        clock.dateFormat = "HH:mm"
+        return clock.string(from: date)
+    }
+
     /// The short-lived hint after a refresh that sent nothing.
     public static func refreshHint(_ deferral: RefreshDeferral, now: Date, timeZone: TimeZone) -> String {
         guard let tool = deferral.rateLimitedBy else {
             let seconds = max(1, Int(deferral.until.timeIntervalSince(now).rounded(.up)))
             return "Refreshed moments ago. Try again in " + (seconds < 90 ? "\(seconds) s." : "\((seconds + 59) / 60) min.")
         }
-        let vendor = switch tool {
-        case .claude: "Claude"
-        case .codex: "Codex"
-        case .agy: "Antigravity"
-        }
-        let clock = DateFormatter()
-        clock.locale = Locale(identifier: "en_US_POSIX")
-        clock.timeZone = timeZone
-        clock.dateFormat = "HH:mm"
-        return "\(vendor) is rate-limited. Next check at \(clock.string(from: deferral.until))."
+        return "\(vendor(tool)) is rate-limited. Next check at \(clock(deferral.until, timeZone))."
     }
 }

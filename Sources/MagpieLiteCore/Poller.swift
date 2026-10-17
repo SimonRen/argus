@@ -268,7 +268,9 @@ public struct TaskSleeper: Sleeper {
         if token == nil, key.tool == .agy, let renewer, let refresh = login.tokens.refreshToken {
             token = await renewer.liveAgyAccessToken(key, refreshToken: refresh, clientID: login.clientID)
         }
-        guard let token else { return state.update(key) { $0.stale = true } }
+        guard let token else {
+            return state.update(key) { $0.stale = true; $0.error = "its sign-in has expired; use \(key.tool.displayName) once to renew it" }
+        }
         lastAttempt[key] = now()
         apply(await paced(key.tool) { await self.fetcher.fetch(key.tool, accountKey: key.id, accessToken: token, accountID: login.accountID) }, to: key)
     }
@@ -283,7 +285,7 @@ public struct TaskSleeper: Sleeper {
             guard await renew(key, .nearExpiry(accessToken: tokens?.accessToken ?? ""), renewer, &envelope, &tokens) else { return }
         }
         guard let token = tokens?.accessToken, (tokens?.accessTokenExpiry ?? .distantFuture) > now() else {
-            return state.update(key) { $0.stale = true }
+            return state.update(key) { $0.stale = true; $0.error = "no usable token" }
         }
         lastAttempt[key] = now()
         let accountID = envelope.accountID

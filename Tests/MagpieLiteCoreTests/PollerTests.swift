@@ -72,6 +72,10 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(rig.state.rateLimitedUntil[testKey(b)] == start + 300 && rig.state.rateLimitedUntil[testKey(a)] == nil)
         #expect(rig.state.status[testKey(b)]?.stale == true && rig.state.status[testKey(b)]?.error == "rate limited")
         #expect(rig.state.snapshot(.claude).rateLimitedUntil == start + 300)
+        let bRow = try #require(rig.state.snapshot(.claude).accounts.first { $0.key == testKey(b) })
+        #expect(bRow.retryAt == start + 300 && bRow.error == "rate limited" && bRow.reading == nil)
+        #expect(ToolCard.build(rig.state.snapshot(.claude), expanded: true, dismissedUnsavedKey: nil, now: rig.clock.now)
+                    .others.first { $0.id == testKey(b) }?.badges == [.notFetched])
         rig.clock.advance(200)
         await rig.poller.runBatch()
         #expect(rig.count("b") == 1 && rig.count("a") == 2 && rig.state.status[testKey(a)]?.stale == false)
@@ -152,6 +156,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(rig.tags == ["a"])
         #expect(rig.state.status[testKey(fresh)]?.stale == true)
         #expect(rig.state.status[testKey(fresh)]?.reading != nil)
+        #expect(rig.state.status[testKey(fresh)]?.error == "its sign-in has expired; use Claude Code once to renew it")
     }
 
     // MARK: F04-AC-4.c16

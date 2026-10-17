@@ -269,11 +269,12 @@ private struct ManagerRowView: View {
                 HStack(spacing: 6) {
                     if let plan = row.plan, !plan.isEmpty { Chip(text: plan, theme: t) }
                     if !row.isSaved { Chip(text: "Not saved", theme: t) }
+                    let problem = PopoverText.problem(tool: tool, error: row.error, retryAt: row.retryAt, now: .now, timeZone: .current)
                     ForEach(Array(row.badges.enumerated()), id: \.offset) { item in
                         if case .stale(let age) = item.element {
-                            Text("updated \(age)").font(.system(size: 11)).foregroundStyle(t.ter).fixedSize()
+                            Text("updated \(age)").font(.system(size: 11)).foregroundStyle(t.ter).fixedSize().help(problem)
                         } else {
-                            BadgeView(badge: item.element, theme: t)
+                            BadgeView(badge: item.element, theme: t, help: item.element.isFetchProblem ? problem : nil)
                         }
                     }
                 }

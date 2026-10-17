@@ -192,7 +192,10 @@ struct RowView: View {
                 Text(row.email).font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.tail)
                 if let plan = row.plan, !plan.isEmpty { Chip(text: plan, theme: t) }
                 Spacer(minLength: 4)
-                ForEach(Array(row.badges.enumerated()), id: \.offset) { BadgeView(badge: $0.element, theme: t) }
+                let problem = PopoverText.problem(tool: tool, error: row.error, retryAt: row.retryAt, now: .now, timeZone: .current)
+                ForEach(Array(row.badges.enumerated()), id: \.offset) {
+                    BadgeView(badge: $0.element, theme: t, help: $0.element.isFetchProblem ? problem : nil)
+                }
                 if row.isLive {
                     HStack(spacing: 5) {
                         Circle().fill(t.liveText).frame(width: 6, height: 6)
@@ -316,15 +319,20 @@ struct Chip: View {
 struct BadgeView: View {
     let badge: RowBadge
     let theme: Theme
+    /// The stale / not-fetched badge's tooltip.
+    var help: String?
 
     var body: some View {
-        content.fixedSize()
+        content.fixedSize().help(help ?? "")
     }
 
     @ViewBuilder private var content: some View {
         switch badge {
         case .stale(let age):
             Label(age, systemImage: "clock").labelStyle(TightLabel()).font(.system(size: 10.5)).foregroundStyle(theme.ter)
+        case .notFetched:
+            Label("Not fetched", systemImage: "exclamationmark.circle").labelStyle(TightLabel())
+                .font(.system(size: 10.5, weight: .medium)).foregroundStyle(theme.warnText)
         case .kept:
             Chip(text: "Kept", theme: theme)
         case .needsSignIn, .appNeedsUpdate, .incomplete, .unreadable:

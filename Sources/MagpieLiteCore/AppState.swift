@@ -31,9 +31,12 @@ public struct AccountSnapshot: Sendable, Equatable {
     public let stale: Bool
     /// Its allowance request is in flight.
     public let fetching: Bool
+    /// Why the last fetch failed or was skipped, and when its backoff lets it try again.
+    public let error: String?
+    public let retryAt: Date?
 
     public init(key: AccountKey, label: String, plan: String?, isLive: Bool, isSaved: Bool, kept: Bool,
-                flag: AccountFlag, reading: AllowanceReading?, stale: Bool, fetching: Bool = false) {
+                flag: AccountFlag, reading: AllowanceReading?, stale: Bool, fetching: Bool = false, error: String? = nil, retryAt: Date? = nil) {
         self.key = key
         self.label = label
         self.plan = plan
@@ -44,6 +47,8 @@ public struct AccountSnapshot: Sendable, Equatable {
         self.reading = reading
         self.stale = stale
         self.fetching = fetching
+        self.error = error
+        self.retryAt = retryAt
     }
 }
 
@@ -75,7 +80,7 @@ extension ToolSnapshot {
         let accounts = accounts.map { a in
             AccountSnapshot(key: a.key, label: a.label, plan: a.plan, isLive: a.isLive, isSaved: a.isSaved, kept: a.kept, flag: a.flag,
                             reading: a.reading.map { AllowanceReading(groups: $0.groups.filter(major), plan: $0.plan, fetchedAt: $0.fetchedAt) },
-                            stale: a.stale, fetching: a.fetching)
+                            stale: a.stale, fetching: a.fetching, error: a.error, retryAt: a.retryAt)
         }
         return ToolSnapshot(tool: tool, live: live, accounts: accounts, rateLimitedUntil: rateLimitedUntil)
     }
@@ -136,7 +141,8 @@ extension ToolSnapshot {
         default: derived
         }
         return AccountSnapshot(key: key, label: label, plan: plan, isLive: isLive, isSaved: isSaved, kept: kept,
-                               flag: flag, reading: s?.reading, stale: s?.stale ?? false, fetching: fetching.contains(key))
+                               flag: flag, reading: s?.reading, stale: s?.stale ?? false, fetching: fetching.contains(key),
+                               error: s?.error, retryAt: rateLimitedUntil[key].flatMap { $0 > now() ? $0 : nil })
     }
 
     func update(_ key: AccountKey, _ change: (inout AccountStatus) -> Void) {

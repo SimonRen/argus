@@ -71,7 +71,8 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
             #expect(AccountRowProbe(account("x@example.com", flag: flag)).row.badges == [badge])
         }
         let staleWithoutReading = AccountRowProbe(account("n@example.com", stale: true))
-        #expect(staleWithoutReading.row.badges.isEmpty)
+        #expect(staleWithoutReading.row.badges == [.notFetched])
+        #expect(AccountRowProbe(account("z@example.com", flag: .needsSignIn, stale: true)).row.badges == [.needsSignIn])
         #expect(AccountRowProbe(account("", flag: .unreadable)).row.email == "Unknown account")
     }
 
@@ -104,6 +105,16 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
                         account("tie@example.com", reading: reading([("All models", 70, 90)]))]
         let c = card(snapshot(accounts))
         #expect(c.suggestion == Suggestion(target: AccountKey(tool: .claude, id: "best@example.com"), text: "Running low. best@example.com has used 30%."))
+    }
+
+    @Test func `a stale or unfetched row's tooltip says why: a backoff with its next try, else the error`() {
+        let utc = TimeZone(identifier: "UTC")!
+        let at = Date(timeIntervalSince1970: 1_789_999_200)   // 14:00 UTC
+        #expect(PopoverText.problem(tool: .claude, error: "rate limited", retryAt: at, now: at - 600, timeZone: utc) == "Rate limited by Claude. Next try at 14:00.")
+        #expect(PopoverText.problem(tool: .claude, error: "rate limited", retryAt: at, now: at + 1, timeZone: utc) == "Couldn't refresh: rate limited.")
+        #expect(PopoverText.problem(tool: .codex, error: "HTTP 503: busy", retryAt: nil, now: at, timeZone: utc) == "Couldn't refresh: HTTP 503: busy.")
+        #expect(PopoverText.problem(tool: .agy, error: nil, retryAt: nil, now: at, timeZone: utc) == "Not refreshed this time.")
+        #expect(RowBadge.notFetched.isFetchProblem && RowBadge.stale("1 min ago").isFetchProblem && !RowBadge.needsSignIn.isFetchProblem)
     }
 
     @Test func `a window with nothing used reads not started, even with a reset time`() {
