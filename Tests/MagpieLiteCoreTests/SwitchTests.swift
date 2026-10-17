@@ -317,6 +317,36 @@ fileprivate final class Fixture: @unchecked Sendable {
         #expect(f.box.violations.isEmpty)
     }
 
+    @Test func `REQ/F03-AC-3.c7 an existing .credentials.json gets the new Keychain value, an absent one is not created, a failed switch restores it`() async throws {
+        for present in [true, false] {
+            let f = try Fixture()
+            try await f.seedClaude("b")
+            let target = try await f.saveLive(.claude)
+            try await f.seedClaude("a")
+            let shadow = f.box.home.appending(path: ".claude/.credentials.json")
+            if present {
+                try FileManager.default.createDirectory(at: shadow.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try utf8("{\"stale\":true}").write(to: shadow)
+            }
+            guard case .switched = await f.switcher().switchTo(target) else { Issue.record("switch failed"); return }
+            if present {
+                guard case .found(let item) = await f.claudeKeychain() else { Issue.record("no item"); return }
+                #expect(try Data(contentsOf: shadow) == item)
+            } else {
+                #expect(!FileManager.default.fileExists(atPath: shadow.path))
+            }
+        }
+        let f = try Fixture()
+        try await f.seedClaude("b")
+        let target = try await f.saveLive(.claude)
+        try await f.seedClaude("a")
+        let shadow = f.box.home.appending(path: ".claude/.credentials.json")
+        try FileManager.default.createDirectory(at: shadow.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try utf8("{\"stale\":true}").write(to: shadow)
+        #expect(await f.switcher(faults: SwitchFaults(failAt: .writeClaudeConfig)).switchTo(target) == .failed("Switch failed — Claude Code still uses a@example.com"))
+        #expect(try Data(contentsOf: shadow) == utf8("{\"stale\":true}"))
+    }
+
     @Test func `REQ/F03-AC-3.c7 a busy Claude lock refuses after the budget, a stale one is broken`() async throws {
         let f = try Fixture()
         try await f.seedClaude("b")

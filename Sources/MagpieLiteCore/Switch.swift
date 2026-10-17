@@ -252,6 +252,12 @@ public struct Switcher: Sendable {
                   let value = Self.claudeItem(target: payload, live: before) else { return (false, nil) }
             snapshots.append(.keychain(service: service, account: account, before: before))
             guard await keychain.write(service: service, account: account, value: value) == .written else { return (false, nil) }
+            // An existing `.credentials.json` gets the same value so running sessions see its mtime change; never created, best effort.
+            let shadow = env.home.appending(path: ".claude/.credentials.json").resolvingSymlinksInPath()
+            if case let old?? = fileSnapshot(shadow) {
+                snapshots.append(.file(shadow, before: old))
+                _ = writeFileAtomically(value, to: shadow)
+            }
             let config = claude.configURL.resolvingSymlinksInPath()
             guard faults.failAt != .writeClaudeConfig, let current = fileSnapshot(config),
                   let spliced = Self.splice(account: Data(target.claudeAccount!.utf8), into: current) else { return (false, value) }
