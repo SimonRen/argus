@@ -168,9 +168,14 @@ struct ManagerView: View {
                     }
                     Spacer()
                     HStack(spacing: 8) {
-                        Text("Show in menubar").font(.system(size: 12))
+                        Text("Show in").font(.system(size: 12)).foregroundStyle(t.sub).fixedSize()
+                        Text("Menubar").font(.system(size: 12)).fixedSize()
                         Toggle("Show \(selected.displayName) in menubar",
                                isOn: Binding(get: { preferences.isShown(selected) }, set: { preferences.setShown(selected, $0) }))
+                            .toggleStyle(.switch).labelsHidden().controlSize(.small)
+                        Text("Popover").font(.system(size: 12)).fixedSize().padding(.leading, 4)
+                        Toggle("Show \(selected.displayName) in popover",
+                               isOn: Binding(get: { preferences.isInPopover(selected) }, set: { preferences.setInPopover(selected, $0) }))
                             .toggleStyle(.switch).labelsHidden().controlSize(.small)
                     }
                     .padding(.leading, 12).padding(.trailing, 6).frame(height: 30).background(t.soft, in: RoundedRectangle(cornerRadius: 9))

@@ -161,7 +161,9 @@ public struct ToolCard: Sendable, Equatable {
 public enum PopoverText {
     public static func resetText(_ window: AllowanceWindow?, now: Date) -> String {
         guard let window else { return "—" }
-        guard let resetsAt = window.resetsAt else { return window.remaining >= 100 ? "not started" : "—" }
+        // Nothing used: the window hasn't started (agy then reports a reset one full window from now).
+        if window.remaining >= 100 { return "not started" }
+        guard let resetsAt = window.resetsAt else { return "—" }
         let seconds = max(0, Int(resetsAt.timeIntervalSince(now)))
         let minutes = seconds / 60, hours = seconds / 3600, days = seconds / 86400
         if seconds < 3600 { return "in \(minutes)m" }

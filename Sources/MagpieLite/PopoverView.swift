@@ -12,6 +12,7 @@ struct PopoverView: View {
     let state: AppState
     let commands: AccountCommands
     let screen: PopoverScreen
+    let preferences: MenuBarPreferences
     let openManager: () -> Void
 
     /// Tools whose other accounts are listed; kept until the app quits.
@@ -29,7 +30,7 @@ struct PopoverView: View {
     }
 
     private func content(_ t: Theme, now: Date) -> some View {
-        let cards = Tool.allCases.map { tool in
+        let cards = Tool.allCases.filter(preferences.isInPopover).map { tool in
             ToolCard.build(state.snapshot(tool).hidingMinorGroups, expanded: expanded.contains(tool), dismissedUnsavedKey: commands.dismissedUnsaved[tool], now: now)
         }
         // The whole popover fits the screen: what's left after the header, notices, footer and the arrow's margin.
@@ -43,6 +44,10 @@ struct PopoverView: View {
             ScrollView {
                 VStack(spacing: 8) {
                     ForEach(cards, id: \.tool) { CardView(card: $0, theme: t, actions: actions(for: $0.tool)) }
+                    if cards.isEmpty {
+                        Text("Every tool is hidden here. Turn on Show in popover in Manage accounts…")
+                            .font(.system(size: 12)).foregroundStyle(t.sub).multilineTextAlignment(.center).padding(.vertical, 16)
+                    }
                 }
                 .padding(.horizontal, 10)
                 .background(GeometryReader { Color.clear.preference(key: HeightKey.self, value: $0.size.height) })

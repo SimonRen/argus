@@ -65,15 +65,26 @@ public struct MenuBarSummary: Sendable, Equatable {
     }
 }
 
-/// Each tool's Show-in-menubar choice, persisted at once; on unless turned off.
+/// Each tool's Show-in-menubar and Show-in-popover choices, persisted at once; on unless turned off.
 @MainActor @Observable public final class MenuBarPreferences {
     @ObservationIgnored private let defaults: UserDefaults
     private var shown: [Tool: Bool]
+    private var inPopover: [Tool: Bool]
 
     public init(defaults: UserDefaults) {
         self.defaults = defaults
         shown = Dictionary(uniqueKeysWithValues: Tool.allCases.map { ($0, defaults.object(forKey: Self.key($0)) as? Bool ?? true) })
+        inPopover = Dictionary(uniqueKeysWithValues: Tool.allCases.map { ($0, defaults.object(forKey: Self.popoverKey($0)) as? Bool ?? true) })
     }
+
+    public func isInPopover(_ tool: Tool) -> Bool { inPopover[tool] ?? true }
+
+    public func setInPopover(_ tool: Tool, _ on: Bool) {
+        inPopover[tool] = on
+        defaults.set(on, forKey: Self.popoverKey(tool))
+    }
+
+    static func popoverKey(_ tool: Tool) -> String { "showInPopover.\(tool.rawValue)" }
 
     public func isShown(_ tool: Tool) -> Bool { shown[tool] ?? true }
 

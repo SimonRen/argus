@@ -106,6 +106,11 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
         #expect(c.suggestion == Suggestion(target: AccountKey(tool: .claude, id: "best@example.com"), text: "Running low. best@example.com has used 30%."))
     }
 
+    @Test func `a window with nothing used reads not started, even with a reset time`() {
+        #expect(PopoverText.resetText(AllowanceWindow(remaining: 100, resetsAt: now + 18000), now: now) == "not started")
+        #expect(PopoverText.resetText(AllowanceWindow(remaining: 99.6, resetsAt: now + 18000), now: now) == "in 5h 00m")
+    }
+
     @Test func `REQ/F06-AC-6.c6 ties go to the first account in list order`() {
         let accounts = [account("live@example.com", live: true, reading: reading([("", 5, 50)])),
                         account("b@example.com", reading: reading([("", 60, 60)])), account("a@example.com", reading: reading([("", 60, 60)]))]

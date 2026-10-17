@@ -72,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }, onClose: { commands.closeUndo() })
         let statusItem = StatusItemController(state: state, preferences: preferences)
         let screen = PopoverScreen()
-        let view = PopoverView(state: state, commands: commands, screen: screen, openManager: { [weak self] in self?.openManager() })
+        let view = PopoverView(state: state, commands: commands, screen: screen, preferences: preferences, openManager: { [weak self] in self?.openManager() })
         let content = NSHostingController(rootView: view)
         content.sizingOptions = [.preferredContentSize]
         statusItem.attach(popover: content, screen: screen) { [weak self] in self?.openManager() }

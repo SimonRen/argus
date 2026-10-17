@@ -117,4 +117,16 @@ fileprivate func value(_ text: String, _ low: Bool = false) -> MenuBarValue { Me
         restarted.setShown(.agy, true)
         #expect(MenuBarPreferences(defaults: UserDefaults(suiteName: suite)!).isShown(.agy))
     }
+
+    @MainActor @Test func `Show in popover is on until set, independent of Show in menubar, and survives a restart`() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let prefs = MenuBarPreferences(defaults: defaults)
+        #expect(Tool.allCases.allSatisfy { prefs.isInPopover($0) })
+        prefs.setInPopover(.codex, false)
+        #expect(!prefs.isInPopover(.codex) && prefs.isShown(.codex))
+        let restarted = MenuBarPreferences(defaults: UserDefaults(suiteName: suite)!)
+        #expect(!restarted.isInPopover(.codex) && restarted.isInPopover(.claude) && restarted.isShown(.codex))
+    }
 }
