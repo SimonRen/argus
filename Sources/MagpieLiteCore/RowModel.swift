@@ -53,6 +53,7 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
     public let email: String
     public let plan: String?
     public let isLive: Bool
+    public let isSaved: Bool
     public let badges: [RowBadge]
     public let groups: [GroupRow]
     /// Stale → content at 70 % opacity.
@@ -66,6 +67,7 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
         email = account.label.isEmpty ? "Unknown account" : account.label
         plan = account.plan
         isLive = account.isLive
+        isSaved = account.isSaved
         var badges: [RowBadge] = []
         if account.stale, let reading = account.reading { badges.append(.stale(PopoverText.age(since: reading.fetchedAt, now: now))) }
         let blocked: (RowBadge, String)? = switch account.flag {

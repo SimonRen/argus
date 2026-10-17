@@ -43,10 +43,17 @@ public struct TaskSleeper: Sleeper {
     }
 
     /// One batch now, then forever: sleep the interval → batch.
-    public func start() {
+    public func start() { startLoop(batchFirst: true) }
+
+    /// Restarts a running loop so its next sleep uses the new interval.
+    public func intervalDidChange() {
+        if loop != nil { startLoop(batchFirst: false) }
+    }
+
+    private func startLoop(batchFirst: Bool) {
         loop?.cancel()
         loop = Task { [weak self] in
-            await self?.runBatch()
+            if batchFirst { await self?.runBatch() }
             while !Task.isCancelled {
                 guard let self else { return }
                 do { try await sleeper.sleep(for: .seconds(60 * state.intervalMinutes)) } catch { return }

@@ -556,8 +556,8 @@ fileprivate final class Fixture: @unchecked Sendable {
         #expect(CodexProcesses.desktopAppRunning([desktop]) && CodexProcesses.desktopAppRunning([desktopBare]))
         #expect(!CodexProcesses.daemonRunning([desktop]))
         #expect(!CodexProcesses.daemonRunning(others) && !CodexProcesses.desktopAppRunning(others))
-        #expect(CodexProcesses.daemonExecutable(others + [desktop, daemon]) == URL(fileURLWithPath: "/opt/homebrew/bin/codex"))
-        #expect(CodexProcesses.daemonExecutable(others + [desktop]) == nil)
+        #expect(CodexProcesses.daemonPID(others + [desktop, daemon]) == 77)
+        #expect(CodexProcesses.daemonPID(others + [desktop]) == nil)
     }
 
     // MARK: F03-AC-3.c15
@@ -574,6 +574,12 @@ fileprivate final class Fixture: @unchecked Sendable {
         await f.seedAgy("a")
         #expect(await f.switcher().switchTo(agyTarget) == .switched(
             notice: "Antigravity CLI now signs in as b@example.com from its next session.", offersRestart: false))
+    }
+
+    @Test func `Restart only trusts the kernel's executable path for a daemon pid`() {
+        // This test process is not named codex; a pid that does not exist resolves to nothing.
+        #expect(CodexProcesses.daemonExecutable(["\(getpid()) /opt/homebrew/bin/codex app-server --managed-daemon"]) == nil)
+        #expect(CodexProcesses.daemonExecutable(["999999 /tmp/evil/codex app-server --managed-daemon"]) == nil)
     }
 
     @Test func `the standard Claude lock timing`() {

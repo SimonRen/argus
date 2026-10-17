@@ -33,7 +33,7 @@ public enum SwitchOutcome: Sendable, Equatable {
 public struct ProcessListing: Sendable {
     public let lines: @Sendable () -> [String]
 
-    /// `ps -A -o pid= -o args=` lines: "<pid> <args>".
+    /// `ps -x -o pid= -o args=` lines (this user's processes): "<pid> <args>".
     public init(lines: @escaping @Sendable () -> [String]) {
         self.lines = lines
     }
@@ -41,7 +41,7 @@ public struct ProcessListing: Sendable {
     public static let system = ProcessListing {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/ps")
-        p.arguments = ["-A", "-o", "pid=", "-o", "args="]
+        p.arguments = ["-x", "-o", "pid=", "-o", "args="]
         let out = Pipe()
         p.standardOutput = out
         p.standardError = FileHandle.nullDevice
@@ -66,14 +66,31 @@ public enum CodexProcesses {
         }
     }
 
-    /// The `codex` executable of a running managed app-server daemon.
-    public static func daemonExecutable(_ lines: [String]) -> URL? {
-        for line in lines {
-            let args = arguments(line)
-            guard isDaemon(args), let codex = args.first(where: { $0.split(separator: "/").last == "codex" }) else { continue }
-            return URL(fileURLWithPath: codex)
+    /// The pid of a running managed app-server daemon.
+    public static func daemonPID(_ lines: [String]) -> Int32? {
+        for line in lines where isDaemon(arguments(line)) {
+            if let pid = line.split(separator: " ").first.flatMap({ Int32($0) }) { return pid }
         }
         return nil
+    }
+
+    /// The executable of a running managed app-server daemon, as the kernel reports it for that pid (never its
+    /// argument text), accepted only when it is a file named `codex` owned by root or this user and writable by no
+    /// one else — it is what Restart runs.
+    public static func daemonExecutable(_ lines: [String]) -> URL? {
+        daemonPID(lines).flatMap(trustedCodex)
+    }
+
+    static func trustedCodex(pid: Int32) -> URL? {
+        var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard length > 0 else { return nil }
+        let url = URL(fileURLWithPath: String(decoding: buffer.prefix(Int(length)).map { UInt8(bitPattern: $0) }, as: UTF8.self))
+        guard url.lastPathComponent == "codex", let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              attrs[.type] as? FileAttributeType == .typeRegular,
+              let owner = (attrs[.ownerAccountID] as? NSNumber)?.uint32Value, owner == 0 || owner == getuid(),
+              let mode = (attrs[.posixPermissions] as? NSNumber)?.intValue, mode & 0o022 == 0 else { return nil }
+        return url
     }
 
     /// The arguments after the pid.

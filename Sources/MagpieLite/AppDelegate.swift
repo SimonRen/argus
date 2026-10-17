@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var poller: Poller?
     private var statusItem: StatusItemController?
     private var commands: AccountCommands?
+    private var manager: ManagerWindowController?
 
     static func main() {
         let delegate = AppDelegate()
@@ -63,7 +64,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return await CodexDaemon.restart(executable: codex, codexHome: codexHome)
         }
         self.commands = commands
-        let statusItem = StatusItemController(state: state, preferences: MenuBarPreferences(defaults: .standard))
+        let preferences = MenuBarPreferences(defaults: .standard)
+        let loginItem = LoginItemController(service: SMAppServiceLoginItem())
+        manager = ManagerWindowController(makeView: {
+            AnyView(ManagerView(state: state, commands: commands, poller: poller, preferences: preferences, loginItem: loginItem))
+        }, onClose: { commands.closeUndo() })
+        let statusItem = StatusItemController(state: state, preferences: preferences)
         let view = PopoverView(state: state, commands: commands, poller: poller, openManager: { [weak self] in self?.openManager() })
         let content = NSHostingController(rootView: view)
         content.sizingOptions = [.preferredContentSize]
@@ -72,12 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         poller.start()
     }
 
-    /// The manager window arrives with its own task; until then the popover stays the only window.
     private func openManager() {
         statusItem?.closePopover()
+        manager?.show()
     }
 
-    /// An `.accessory` app draws no menu bar, but key equivalents still route through the main menu.
+    /// The app menu: Quit, Close, Copy, Paste. An `.accessory` app draws no menu bar, but key equivalents still route here.
     private static func makeMainMenu() -> NSMenu {
         let main = NSMenu()
         let appItem = NSMenuItem()
@@ -89,6 +95,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: "q"
         )
         appItem.submenu = appMenu
+        let fileItem = NSMenuItem()
+        main.addItem(fileItem)
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        fileItem.submenu = fileMenu
+        let editItem = NSMenuItem()
+        main.addItem(editItem)
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editItem.submenu = editMenu
         return main
     }
 }

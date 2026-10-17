@@ -29,6 +29,9 @@ public enum SaveResult: Sendable, Equatable {
     public private(set) var offersRestart = false
     /// Tool → the live identity key "Later" was pressed for.
     public private(set) var dismissedUnsaved: [Tool: String] = [:]
+    /// The last removed entry's raw bytes, held only while Undo is possible.
+    @ObservationIgnored private var removed: RemovedEntry?
+    private var removedEmail: String?
 
     public init(state: AppState, poller: Poller, vault: Vault, tools: [any ToolAdapter], switcher: Switcher,
                 restartDaemon: (@Sendable () async -> String?)? = nil) {
@@ -95,5 +98,49 @@ public enum SaveResult: Sendable, Equatable {
     private func show(_ text: String, offersRestart: Bool = false) {
         notice = text
         self.offersRestart = offersRestart
+    }
+}
+
+extension AccountCommands {
+    /// "Removed <email>. Its saved login file was deleted." while Undo is possible.
+    public var undoBanner: String? { removedEmail.map { "Removed \($0). Its saved login file was deleted." } }
+
+    /// Deletes the saved login inside the tool's exclusive section, keeping its raw bytes for Undo.
+    public func remove(_ key: AccountKey) async {
+        closeUndo()
+        let email: String = if case .valid(let e)? = state.entries[key.tool]?.first(where: { $0.id == key.id }), !e.label.isEmpty {
+            e.label
+        } else {
+            "Unknown account"
+        }
+        let vault = vault
+        if let entry = try? await vault.exclusive(key.tool, { try await vault.remove(key.tool, id: key.id) }) {
+            removed = entry
+            removedEmail = email
+        }
+        await poller.reloadVault()
+    }
+
+    /// Writes the removed bytes back unless an entry with that id exists by now; the banner closes either way.
+    public func undo() async {
+        guard let entry = removed else { return }
+        closeUndo()
+        let vault = vault
+        _ = try? await vault.exclusive(entry.tool) { try await vault.restore(entry) }
+        await poller.reloadVault()
+    }
+
+    /// Drops the held bytes; Undo is no longer possible.
+    public func closeUndo() {
+        removed = nil
+        removedEmail = nil
+    }
+
+    /// 3, 5 or 10 minutes: persisted, and the poll loop's next sleep uses it.
+    public func setInterval(_ minutes: Int) {
+        guard AppState.intervals.contains(minutes) else { return }
+        state.defaults.set(minutes, forKey: AppState.intervalKey)
+        state.intervalMinutes = minutes
+        poller.intervalDidChange()
     }
 }

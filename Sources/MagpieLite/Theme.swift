@@ -30,6 +30,15 @@ struct Theme {
     var warnBg: Color { pick(Color(hex: 0xD9822B).opacity(0.12), Color(hex: 0xF0A14A).opacity(0.14)) }
     var warnText: Color { pick(Color(hex: 0x8A4B0F), Color(hex: 0xF5C38A)) }
     var link: Color { pick(Color(hex: 0x2F6FE0), Color(hex: 0x86B5FF)) }
+    // Manager window
+    var win: Color { pick(Color(hex: 0xF6F6F8), Color(hex: 0x232327)) }
+    var titlebar: Color { pick(.white.opacity(0.6), .white.opacity(0.04)) }
+    var side: Color { pick(.black.opacity(0.025), .white.opacity(0.03)) }
+    var thead: Color { pick(.black.opacity(0.025), .white.opacity(0.03)) }
+    var tableCard: Color { pick(.white, .white.opacity(0.05)) }
+    var soft: Color { pick(.black.opacity(0.04), .white.opacity(0.06)) }
+    var flashBg: Color { pick(Color(hex: 0x2B8A78).opacity(0.12), Color(red: 80 / 255, green: 200 / 255, blue: 170 / 255).opacity(0.14)) }
+    var flashText: Color { pick(Color(hex: 0x1E6B5D), Color(hex: 0x8FE0CC)) }
 
     func bar(_ band: Band) -> Color {
         switch band {
