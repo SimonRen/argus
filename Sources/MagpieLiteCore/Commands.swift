@@ -1,0 +1,99 @@
+import Foundation
+import Observation
+
+public enum SaveResult: Sendable, Equatable {
+    case saved(email: String), updated(email: String), refused(String)
+
+    /// The banner text for this result.
+    public var message: String {
+        switch self {
+        case .saved(let email): "Saved \(email)."
+        case .updated(let email): "Updated the saved login for \(email)."
+        case .refused(let reason): reason
+        }
+    }
+}
+
+/// What the popover and the manager do to accounts: save, switch, dismiss.
+@MainActor @Observable public final class AccountCommands {
+    @ObservationIgnored let state: AppState
+    @ObservationIgnored let poller: Poller
+    @ObservationIgnored let vault: Vault
+    @ObservationIgnored let tools: [Tool: any ToolAdapter]
+    @ObservationIgnored let switcher: Switcher
+    @ObservationIgnored let restartDaemon: (@Sendable () async -> String?)?
+
+    /// The last switch or save result, until dismissed.
+    public private(set) var notice: String?
+    /// The notice offers Restart for a running Codex app-server.
+    public private(set) var offersRestart = false
+    /// Tool → the live identity key "Later" was pressed for.
+    public private(set) var dismissedUnsaved: [Tool: String] = [:]
+
+    public init(state: AppState, poller: Poller, vault: Vault, tools: [any ToolAdapter], switcher: Switcher,
+                restartDaemon: (@Sendable () async -> String?)? = nil) {
+        self.state = state
+        self.poller = poller
+        self.vault = vault
+        self.tools = Dictionary(tools.map { ($0.tool, $0) }, uniquingKeysWith: { first, _ in first })
+        self.switcher = switcher
+        self.restartDaemon = restartDaemon
+    }
+
+    /// Reads the live login and saves it inside the tool's exclusive section.
+    public func save(_ tool: Tool) async -> SaveResult {
+        guard let adapter = tools[tool] else { return .refused("not signed in") }
+        let vault = vault
+        let result: SaveResult
+        do {
+            result = try await vault.exclusive(tool) {
+                let envelope = try await vault.save(await adapter.readLive())
+                return envelope.generation == 1 ? .saved(email: envelope.label) : .updated(email: envelope.label)
+            }
+        } catch let error as VaultError {
+            result = .refused(error.reason)
+        } catch {
+            result = .refused("couldn't save")
+        }
+        await poller.reloadVault()
+        show(result.message)
+        return result
+    }
+
+    public func switchTo(_ key: AccountKey) async -> SwitchOutcome {
+        let outcome = await switcher.switchTo(key)
+        await poller.reloadVault()
+        await poller.refreshLive()
+        switch outcome {
+        case .switched(let text, let restart): show(text, offersRestart: restart)
+        case .refused(let text), .failed(let text): show(text)
+        case .noOp: break
+        }
+        return outcome
+    }
+
+    /// Hides the unsaved banner until the tool's live identity changes.
+    public func later(_ tool: Tool) {
+        if case .signedIn(let login) = state.live[tool] { dismissedUnsaved[tool] = login.identity.key }
+    }
+
+    public func dismissNotice() {
+        notice = nil
+        offersRestart = false
+    }
+
+    /// Restarts the running Codex app-server so it picks up the new login.
+    public func restartCodexDaemon() async {
+        guard let restartDaemon else { return }
+        if let failure = await restartDaemon() {
+            show("Couldn't restart the Codex app-server: \(failure)")
+        } else {
+            show("Restarted the Codex app-server.")
+        }
+    }
+
+    private func show(_ text: String, offersRestart: Bool = false) {
+        notice = text
+        self.offersRestart = offersRestart
+    }
+}

@@ -31,7 +31,7 @@ public enum SwitchOutcome: Sendable, Equatable {
 }
 
 public struct ProcessListing: Sendable {
-    let lines: @Sendable () -> [String]
+    public let lines: @Sendable () -> [String]
 
     /// `ps -A -o pid= -o args=` lines: "<pid> <args>".
     public init(lines: @escaping @Sendable () -> [String]) {
@@ -64,6 +64,16 @@ public enum CodexProcesses {
                   let server = args.firstIndex(of: "app-server") else { return false }
             return server + 1 == args.count || args[server + 1].hasPrefix("-")
         }
+    }
+
+    /// The `codex` executable of a running managed app-server daemon.
+    public static func daemonExecutable(_ lines: [String]) -> URL? {
+        for line in lines {
+            let args = arguments(line)
+            guard isDaemon(args), let codex = args.first(where: { $0.split(separator: "/").last == "codex" }) else { continue }
+            return URL(fileURLWithPath: codex)
+        }
+        return nil
     }
 
     /// The arguments after the pid.

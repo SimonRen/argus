@@ -1,5 +1,6 @@
 import AppKit
 import MagpieLiteCore
+import SwiftUI
 
 @main
 @MainActor
@@ -7,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var instanceLock: InstanceLock?
     private var poller: Poller?
     private var statusItem: StatusItemController?
+    private var commands: AccountCommands?
 
     static func main() {
         let delegate = AppDelegate()
@@ -55,8 +57,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             fetcher: AllowanceFetcher(http: http, version: version, now: now),
                             sleeper: TaskSleeper(), now: now, renewer: Renewer(http: http, tools: tools, now: now))
         self.poller = poller
-        statusItem = StatusItemController(state: state, preferences: MenuBarPreferences(defaults: .standard))
+        let switcher = Switcher(env: env, vault: vault, processes: .system)
+        let commands = AccountCommands(state: state, poller: poller, vault: vault, tools: tools, switcher: switcher) {
+            guard let codex = CodexProcesses.daemonExecutable(ProcessListing.system.lines()) else { return "no running app-server found" }
+            return await CodexDaemon.restart(executable: codex, codexHome: codexHome)
+        }
+        self.commands = commands
+        let statusItem = StatusItemController(state: state, preferences: MenuBarPreferences(defaults: .standard))
+        let view = PopoverView(state: state, commands: commands, poller: poller, openManager: { [weak self] in self?.openManager() })
+        let content = NSHostingController(rootView: view)
+        content.sizingOptions = [.preferredContentSize]
+        statusItem.attach(popover: content) { [weak self] in self?.openManager() }
+        self.statusItem = statusItem
         poller.start()
+    }
+
+    /// The manager window arrives with its own task; until then the popover stays the only window.
+    private func openManager() {
+        statusItem?.closePopover()
     }
 
     /// An `.accessory` app draws no menu bar, but key equivalents still route through the main menu.

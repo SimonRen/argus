@@ -8,7 +8,8 @@ import Observation
     private let state: AppState
     private let preferences: MenuBarPreferences
     private var appearanceObservation: NSKeyValueObservation?
-    var onClick: (() -> Void)?
+    private var popover: NSPopover?
+    private var openManager: () -> Void = {}
 
     init(state: AppState, preferences: MenuBarPreferences) {
         self.state = state
@@ -26,7 +27,32 @@ import Observation
         render()
     }
 
-    @objc private func clicked() { onClick?() }
+    /// One transient popover hosting `content`; with no status item window, clicks open the manager instead.
+    func attach(popover content: NSViewController, openManager: @escaping () -> Void) {
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = content
+        self.popover = popover
+        self.openManager = openManager
+    }
+
+    @objc private func clicked() { togglePopover() }
+
+    func togglePopover() {
+        guard let popover else { return }
+        if popover.isShown {
+            popover.performClose(nil)
+            return
+        }
+        guard let button = item.button, button.window != nil else {
+            openManager()
+            return
+        }
+        NSApp.activate()
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
+
+    func closePopover() { popover?.performClose(nil) }
 
     /// Draws the current summary and re-arms observation of everything it read.
     private func render() {

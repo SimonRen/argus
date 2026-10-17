@@ -556,6 +556,8 @@ fileprivate final class Fixture: @unchecked Sendable {
         #expect(CodexProcesses.desktopAppRunning([desktop]) && CodexProcesses.desktopAppRunning([desktopBare]))
         #expect(!CodexProcesses.daemonRunning([desktop]))
         #expect(!CodexProcesses.daemonRunning(others) && !CodexProcesses.desktopAppRunning(others))
+        #expect(CodexProcesses.daemonExecutable(others + [desktop, daemon]) == URL(fileURLWithPath: "/opt/homebrew/bin/codex"))
+        #expect(CodexProcesses.daemonExecutable(others + [desktop]) == nil)
     }
 
     // MARK: F03-AC-3.c15
