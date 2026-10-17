@@ -1,4 +1,20 @@
-refs/
+# Build products — regenerable with `make build` / `make test`.
 .build/
 .build-bundle-test/
 build/
+build_release/
+.swiftpm/
+xcuserdata/
+DerivedData/
+
+# Shipped artifacts stay local; `make publish` attaches them to a GitHub release.
+releases/
+*-notarize.zip
+
+# Reference clones studied while designing the app — not part of this repo.
+refs/
+
+# Local agent and editor state.
+.jarvis/
+.claude/
+.DS_Store

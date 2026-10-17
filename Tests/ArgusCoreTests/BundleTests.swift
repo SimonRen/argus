@@ -98,6 +98,12 @@ struct BundleTests {
             "Contents/Info.plist is not a dictionary"
         )
         #expect((plist["LSUIElement"] as? Bool) == true, "LSUIElement is not true")
+        // The version comes from the VERSION file; the build number is the commit count.
+        let version = try String(contentsOf: root.appendingPathComponent("VERSION"), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect((plist["CFBundleShortVersionString"] as? String) == version, "CFBundleShortVersionString is not \(version)")
+        let buildNumber = plist["CFBundleVersion"] as? String
+        #expect(buildNumber.flatMap(Int.init).map { $0 >= 0 } == true, "CFBundleVersion is not a number: \(buildNumber ?? "missing")")
 
         // The signature verifies.
         let verify = try await run("/usr/bin/codesign", ["--verify", app.path], in: root, logDir: logs)

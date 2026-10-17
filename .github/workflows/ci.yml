@@ -1,0 +1,28 @@
+name: ci
+
+# Build and test on every push and pull request. Signing and notarization are not done here: releases are built,
+# signed and notarized on the signing Mac with `make release` (see scripts/release.sh).
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # The app bundle (ad-hoc signed) plus the whole test suite; tests use disposable keychains and temp folders only.
+      - name: Build and test
+        run: make check
