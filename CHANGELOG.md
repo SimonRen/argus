@@ -6,6 +6,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-17
+
 ### Changed
 
 - Popover rows no longer show how long ago an account was last fetched; the manager still does.
