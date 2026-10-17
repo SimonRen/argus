@@ -226,8 +226,10 @@ public struct TaskSleeper: Sleeper {
         if let running = inFlight[key] { return await running.value }
         let task = Task { await work() }
         inFlight[key] = task
+        state.fetching.insert(key)
         await task.value
         inFlight[key] = nil
+        state.fetching.remove(key)
     }
 
     // MARK: - Fetches

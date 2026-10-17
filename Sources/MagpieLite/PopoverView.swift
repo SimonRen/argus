@@ -198,7 +198,7 @@ struct RowView: View {
                     PillButton(title: "Switch", fill: t.btn, foreground: t.text, disabled: row.switchDisabledReason != nil) { actions.switchTo(row.id) }
                         .help(row.switchDisabledReason ?? "Switch \(tool.displayName) to \(row.email)")
                 }
-                RefreshButton(action: { await actions.refresh(row.id) }) { angle in
+                RefreshButton(action: { await actions.refresh(row.id) }, active: row.isFetching) { angle in
                     Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .bold)).rotationEffect(angle).frame(width: 22, height: 22)
                 }
                 .buttonStyle(.plain).foregroundStyle(t.sub).disabled(!row.refreshEnabled).opacity(row.refreshEnabled ? 1 : 0.4)
@@ -354,31 +354,47 @@ struct SquareButton: View {
     }
 }
 
-/// Its arrow turns clockwise while `action` runs: at least one full turn, always coming to rest upright.
+/// Its arrow turns clockwise while `action` runs or `active` is true (e.g. the account is being fetched for another
+/// reason): at least one full turn, always coming to rest upright.
 struct RefreshButton<Content: View>: View {
     let action: @MainActor () async -> Void
+    var active = false
     @ViewBuilder let content: (Angle) -> Content
     @State private var turns = 0.0
     @State private var running = false
+    /// `active` as state, so the spin loop reads its current value.
+    @State private var external = false
+    @State private var spinning = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button {
             guard !running else { return }
             running = true
+            spin()
             Task {
                 await action()
                 running = false
             }
-            guard !reduceMotion else { return }
-            Task {
-                repeat {
-                    withAnimation(.linear(duration: 0.8)) { turns += 1 }
-                    try? await Task.sleep(for: .milliseconds(800))
-                } while running
-            }
         } label: {
             content(.degrees(turns * 360))
+        }
+        .onChange(of: active, initial: true) {
+            external = active
+            if active { spin() }
+        }
+    }
+
+    /// One loop of whole turns, until neither the action nor `active` holds.
+    private func spin() {
+        guard !spinning, !reduceMotion else { return }
+        spinning = true
+        Task {
+            repeat {
+                withAnimation(.linear(duration: 0.8)) { turns += 1 }
+                try? await Task.sleep(for: .milliseconds(800))
+            } while running || external
+            spinning = false
         }
     }
 }

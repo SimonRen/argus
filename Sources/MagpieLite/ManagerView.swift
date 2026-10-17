@@ -290,7 +290,7 @@ private struct ManagerRowView: View {
                     }
                     .help(row.switchDisabledReason ?? "Switch \(tool.displayName) to \(row.email)")
                 }
-                RefreshButton(action: { await commands.refresh(row.id) }) { angle in
+                RefreshButton(action: { await commands.refresh(row.id) }, active: row.isFetching) { angle in
                     Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold)).rotationEffect(angle).frame(width: 26, height: 26)
                 }
                 .buttonStyle(.plain).foregroundStyle(t.sub).disabled(!row.refreshEnabled).opacity(row.refreshEnabled ? 1 : 0.35).help("Refresh this account")

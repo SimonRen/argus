@@ -201,6 +201,22 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(restart().status.isEmpty)
     }
 
+    @Test func `an account shows as fetching only while its request is in flight`() async throws {
+        let gate = TestGate()
+        let a = testLogin(.claude, "a"), b = testLogin(.claude, "b")
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]]) { request in await gate.wait(); return okReply(request) }
+        try await rig.save(b)
+        await rig.poller.reloadVault()
+        let refresh = Task { await rig.poller.refreshLive() }
+        #expect(await eventually { rig.stub.requests.count == 1 })
+        #expect(rig.state.snapshot(.claude).accounts.first { $0.key == testKey(a) }?.fetching == true)
+        #expect(rig.state.snapshot(.claude).accounts.first { $0.key == testKey(b) }?.fetching == false)
+        #expect(rig.state.snapshot(.claude).hidingMinorGroups.accounts.first { $0.key == testKey(a) }?.fetching == true)
+        await gate.release()
+        await refresh.value
+        #expect(rig.state.fetching.isEmpty)
+    }
+
     // MARK: F04-AC-4.c19
 
     @Test func `REQ/F04-AC-4.c19 Refresh live accounts fetches only live logins and leaves the interval timer alone`() async throws {

@@ -53,6 +53,8 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
     public let email: String
     /// Upper case: "MAX", "PRO".
     public let plan: String?
+    /// Its allowance request is in flight: the row's refresh arrow spins.
+    public let isFetching: Bool
     public let isLive: Bool
     public let isSaved: Bool
     public let badges: [RowBadge]
@@ -65,6 +67,7 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
         id = account.key
         email = account.label.isEmpty ? "Unknown account" : account.label
         plan = account.plan?.uppercased()
+        isFetching = account.fetching
         isLive = account.isLive
         isSaved = account.isSaved
         var badges: [RowBadge] = []

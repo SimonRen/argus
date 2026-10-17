@@ -29,9 +29,11 @@ public struct AccountSnapshot: Sendable, Equatable {
     public let flag: AccountFlag
     public let reading: AllowanceReading?
     public let stale: Bool
+    /// Its allowance request is in flight.
+    public let fetching: Bool
 
     public init(key: AccountKey, label: String, plan: String?, isLive: Bool, isSaved: Bool, kept: Bool,
-                flag: AccountFlag, reading: AllowanceReading?, stale: Bool) {
+                flag: AccountFlag, reading: AllowanceReading?, stale: Bool, fetching: Bool = false) {
         self.key = key
         self.label = label
         self.plan = plan
@@ -41,6 +43,7 @@ public struct AccountSnapshot: Sendable, Equatable {
         self.flag = flag
         self.reading = reading
         self.stale = stale
+        self.fetching = fetching
     }
 }
 
@@ -72,7 +75,7 @@ extension ToolSnapshot {
         let accounts = accounts.map { a in
             AccountSnapshot(key: a.key, label: a.label, plan: a.plan, isLive: a.isLive, isSaved: a.isSaved, kept: a.kept, flag: a.flag,
                             reading: a.reading.map { AllowanceReading(groups: $0.groups.filter(major), plan: $0.plan, fetchedAt: $0.fetchedAt) },
-                            stale: a.stale)
+                            stale: a.stale, fetching: a.fetching)
         }
         return ToolSnapshot(tool: tool, live: live, accounts: accounts, rateLimitedUntil: rateLimitedUntil)
     }
@@ -91,6 +94,8 @@ extension ToolSnapshot {
     public internal(set) var entries: [Tool: [VaultEntry]] = [:]
     public internal(set) var status: [AccountKey: AccountStatus] = [:]
     public internal(set) var rateLimitedUntil: [Tool: Date] = [:]
+    /// Accounts whose allowance request is in flight.
+    public internal(set) var fetching: Set<AccountKey> = []
     /// When the last live-account fetch completed.
     public internal(set) var lastLiveFetch: Date?
 
@@ -129,7 +134,7 @@ extension ToolSnapshot {
         default: derived
         }
         return AccountSnapshot(key: key, label: label, plan: plan, isLive: isLive, isSaved: isSaved, kept: kept,
-                               flag: flag, reading: s?.reading, stale: s?.stale ?? false)
+                               flag: flag, reading: s?.reading, stale: s?.stale ?? false, fetching: fetching.contains(key))
     }
 
     func update(_ key: AccountKey, _ change: (inout AccountStatus) -> Void) {
