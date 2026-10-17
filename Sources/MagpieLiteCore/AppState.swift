@@ -93,7 +93,8 @@ extension ToolSnapshot {
     public internal(set) var live: [Tool: LiveState] = [:]
     public internal(set) var entries: [Tool: [VaultEntry]] = [:]
     public internal(set) var status: [AccountKey: AccountStatus] = [:]
-    public internal(set) var rateLimitedUntil: [Tool: Date] = [:]
+    /// Per account: no allowance request before this (its 429 backoff). Vendors limit per account, not per vendor.
+    public internal(set) var rateLimitedUntil: [AccountKey: Date] = [:]
     /// Accounts whose allowance request is in flight.
     public internal(set) var fetching: Set<AccountKey> = []
     /// When the last live-account fetch completed.
@@ -123,7 +124,8 @@ extension ToolSnapshot {
             accounts.append(account(AccountKey(tool: tool, id: liveID), label: liveLogin.label, plan: liveLogin.plan, isLive: true,
                                     isSaved: false, kept: false, derived: liveLogin.identity.isComplete ? .ok : .incomplete))
         }
-        return ToolSnapshot(tool: tool, live: live[tool], accounts: accounts, rateLimitedUntil: rateLimitedUntil[tool])
+        let toolBackoff = rateLimitedUntil.filter { $0.key.tool == tool }.values.max()
+        return ToolSnapshot(tool: tool, live: live[tool], accounts: accounts, rateLimitedUntil: toolBackoff)
     }
 
     private func account(_ key: AccountKey, label: String, plan: String?, isLive: Bool, isSaved: Bool, kept: Bool,

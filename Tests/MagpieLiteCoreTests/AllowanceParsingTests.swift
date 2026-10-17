@@ -218,10 +218,13 @@ fileprivate func fetcher(_ stub: TestHTTPStub, timeout: TimeInterval = HTTPClien
 
     // MARK: rate-limit backoff
 
-    @Test func `rate-limit delay uses Retry-After, else 300 s growing by half to 1800 s`() {
-        #expect(RateLimitPolicy.nextDelay(previous: nil, retryAfter: 42) == 42)
-        #expect(RateLimitPolicy.nextDelay(previous: nil, retryAfter: nil) == 300)
-        #expect(RateLimitPolicy.nextDelay(previous: 300, retryAfter: nil) == 450)
-        #expect(RateLimitPolicy.nextDelay(previous: 1500, retryAfter: nil) == 1800)
+    @Test func `rate-limit delay: a long Retry-After gets a 900 s margin capped at 4500 s, a short one is honoured or the curve, none waits 300 to 600 s`() {
+        #expect(RateLimitPolicy.nextDelay(strike: 1, retryAfter: 42) == 42)
+        #expect(RateLimitPolicy.nextDelay(strike: 4, retryAfter: 42) == 240)
+        #expect(RateLimitPolicy.nextDelay(strike: 1, retryAfter: 600) == 600)
+        #expect(RateLimitPolicy.nextDelay(strike: 1, retryAfter: 2426) == 3326)
+        #expect(RateLimitPolicy.nextDelay(strike: 1, retryAfter: 4000) == 4500)
+        #expect((1...7).map { RateLimitPolicy.nextDelay(strike: $0, retryAfter: nil) } == [300, 300, 300, 300, 480, 600, 600])
+        #expect(RateLimitPolicy.nextDelay(strike: 1, retryAfter: 0) == 300)
     }
 }

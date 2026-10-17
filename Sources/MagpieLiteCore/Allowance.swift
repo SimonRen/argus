@@ -280,9 +280,14 @@ public actor AllowanceFetcher {
 
 public enum RateLimitPolicy {
     /// `retryAfter` when given; else 300 s for a first 429, the previous delay × 1.5 for a repeat, capped at 1800 s.
-    public static func nextDelay(previous: TimeInterval?, retryAfter: TimeInterval?) -> TimeInterval {
-        if let retryAfter { return retryAfter }
-        guard let previous else { return 300 }
-        return min(previous * 1.5, 1800)
+    /// The wait after an account's `strike`-th consecutive 429, as measured on Claude's usage endpoint
+    /// (refs/claude-swap usage_store.py): a Retry-After over 600 s gets a 900 s margin, since blocks often re-arm just
+    /// after their deadline, capped at 4500 s; a shorter one is honoured, or the growth curve if longer; none (or 0)
+    /// waits 300–600 s.
+    public static func nextDelay(strike: Int, retryAfter: TimeInterval?) -> TimeInterval {
+        let curve = min(30 * pow(2, Double(max(1, strike) - 1)), 600)
+        guard let retryAfter, retryAfter > 0 else { return min(max(curve, 300), 600) }
+        if retryAfter > 600 { return min(retryAfter + 900, 4500) }
+        return max(retryAfter, curve)
     }
 }

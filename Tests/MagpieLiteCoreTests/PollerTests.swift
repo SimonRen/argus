@@ -60,45 +60,58 @@ fileprivate final class Concurrency: @unchecked Sendable {
 
     // MARK: F04-AC-4.c5
 
-    @Test func `REQ/F04-AC-4.c5 a 429 skips the vendor for 5 min growing by half to 30 min and a 200 resets it`() async throws {
-        let replies = ReplyScript([.json(429, "{}"), .json(429, "{}"), .json(200, claudeUsageOK), .json(200, claudeUsageOK), .json(429, "{}")])
+    @Test func `REQ/F04-AC-4.c5 a 429 backs off only that account, again after a repeat, and a 200 clears it`() async throws {
         let a = testLogin(.claude, "a"), b = testLogin(.claude, "b")
-        let rig = try PollerRig(live: [.claude: [.signedIn(a)]]) { _ in replies.next() }
+        let bReplies = ReplyScript([.json(429, "{}"), .json(429, "{}"), .json(200, claudeUsageOK)])
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]]) { request in requestTag(request) == "b" ? bReplies.next() : okReply(request) }
         try await rig.save(a)
         try await rig.save(b)
         let start = rig.clock.now
         await rig.poller.runBatch()
-        #expect(rig.tags == ["a"])
-        #expect(rig.state.rateLimitedUntil[.claude] == start + 300)
-        #expect(rig.state.status[testKey(b)]?.stale == true)
+        #expect(rig.count("a") == 1 && rig.count("b") == 1)
+        #expect(rig.state.rateLimitedUntil[testKey(b)] == start + 300 && rig.state.rateLimitedUntil[testKey(a)] == nil)
+        #expect(rig.state.status[testKey(b)]?.stale == true && rig.state.status[testKey(b)]?.error == "rate limited")
         #expect(rig.state.snapshot(.claude).rateLimitedUntil == start + 300)
         rig.clock.advance(200)
         await rig.poller.runBatch()
-        #expect(rig.tags == ["a"])
+        #expect(rig.count("b") == 1 && rig.count("a") == 2 && rig.state.status[testKey(a)]?.stale == false)
         rig.clock.advance(101)
         await rig.poller.runBatch()
-        #expect(rig.state.rateLimitedUntil[.claude] == rig.clock.now + 450)
-        rig.clock.advance(451)
+        #expect(rig.count("b") == 2 && rig.state.rateLimitedUntil[testKey(b)] == rig.clock.now + 300)
+        rig.clock.advance(301)
         await rig.poller.runBatch()
-        #expect(rig.state.status[testKey(a)]?.stale == false)
-        #expect(rig.state.rateLimitedUntil[.claude] == nil)
-        rig.clock.advance(60)
-        await rig.poller.refresh(testKey(b))
-        #expect(rig.state.rateLimitedUntil[.claude] == rig.clock.now + 300)
+        #expect(rig.count("b") == 3 && rig.state.rateLimitedUntil[testKey(b)] == nil && rig.state.status[testKey(b)]?.stale == false)
     }
 
-    @Test func `REQ/F04-AC-4.c5 Retry-After sets the skip and the growth caps at 30 min`() async throws {
+    @Test func `REQ/F04-AC-4.c5 Retry-After sets the skip, then the curve takes over up to 600 s`() async throws {
         let replies = ReplyScript([.json(429, "{}", headers: ["Retry-After": "120"])] + Array(repeating: .json(429, "{}"), count: 8))
         let rig = try PollerRig(live: [.codex: [.signedIn(testLogin(.codex, "a"))]]) { _ in replies.next() }
         await rig.poller.runBatch()
-        #expect(rig.state.rateLimitedUntil[.codex] == rig.clock.now + 120)
+        let key = testKey(testLogin(.codex, "a"))
+        #expect(rig.state.rateLimitedUntil[key] == rig.clock.now + 120)
         var delays: [TimeInterval] = []
         for _ in 0..<7 {
             rig.clock.advance(2000)
             await rig.poller.runBatch()
-            delays.append(rig.state.rateLimitedUntil[.codex]!.timeIntervalSince(rig.clock.now))
+            delays.append(rig.state.rateLimitedUntil[key]!.timeIntervalSince(rig.clock.now))
         }
-        #expect(delays == [180, 270, 405, 607.5, 911.25, 1366.875, 1800])
+        #expect(delays == [300, 300, 300, 480, 600, 600, 600])
+    }
+
+    @Test func `a backoff survives a restart and still holds the account`() async throws {
+        let a = testLogin(.claude, "a")
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]], persistReadings: true) { _ in .json(429, "{}", headers: ["Retry-After": "2426"]) }
+        try await rig.save(a)
+        let start = rig.clock.now
+        await rig.poller.runBatch()
+        #expect(rig.state.rateLimitedUntil[testKey(a)] == start + 3326)
+        let state = AppState(defaults: UserDefaults(suiteName: UUID().uuidString)!, now: rig.clock.closure)
+        let restarted = Poller(state: state, tools: [], vault: rig.vault, fetcher: AllowanceFetcher(http: HTTPClient(session: rig.stub.session), version: "0", now: rig.clock.closure),
+                               sleeper: RecordingSleeper(), now: rig.clock.closure, readingsFile: rig.box.supportRoot.appending(path: "readings.json"))
+        #expect(state.rateLimitedUntil[testKey(a)] == start + 3326)
+        rig.clock.advance(600)
+        #expect(await restarted.refresh(testKey(a)) == RefreshDeferral(until: start + 3326, rateLimitedBy: .claude))
+        #expect(rig.stub.requests.count == 1)
     }
 
     // MARK: F04-AC-4.c6

@@ -31,7 +31,8 @@ public struct TaskSleeper: Sleeper {
     let sleeper: any Sleeper
     let now: @Sendable () -> Date
     let renewer: Renewer?
-    /// The last reading per account, kept across launches; nil keeps readings in memory only.
+    /// Per account: the last reading, backoff and attempt, kept across launches so a relaunch neither shows dashes
+    /// nor hits a blocked account again; nil keeps them in memory only.
     let readingsFile: URL?
 
     private var loop: Task<Void, Never>?
@@ -39,7 +40,9 @@ public struct TaskSleeper: Sleeper {
     private var inFlight: [AccountKey: Task<Void, Never>] = [:]
     /// Accounts the running batch has yet to fetch, with the callers waiting for that fetch.
     private var queued: [AccountKey: [CheckedContinuation<Void, Never>]] = [:]
-    private var lastDelay: [Tool: TimeInterval] = [:]
+    /// Per account: consecutive 429s, and when the last one came.
+    private var strikes: [AccountKey: Int] = [:]
+    private var last429: [AccountKey: Date] = [:]
     /// When each account's last allowance request was sent.
     private var lastAttempt: [AccountKey: Date] = [:]
     /// The payload an account had when it was flagged; new bytes clear the flag.
@@ -60,22 +63,36 @@ public struct TaskSleeper: Sleeper {
         loadReadings()
     }
 
-    private struct SavedReading: Codable {
+    private struct PollRecord: Codable {
         let key: AccountKey
-        let reading: AllowanceReading
+        var reading: AllowanceReading?
+        var rateLimitedUntil: Date?
+        var strikes: Int?
+        var last429: Date?
+        var lastAttempt: Date?
     }
 
-    /// The readings saved at the last launch, shown stale until each account is fetched again.
+    /// What the last launch saved: readings shown stale until fetched again, backoffs and attempts still honoured.
     private func loadReadings() {
         guard let readingsFile, let data = try? Data(contentsOf: readingsFile),
-              let saved = try? JSONDecoder().decode([SavedReading].self, from: data) else { return }
-        for s in saved { state.update(s.key) { $0.reading = s.reading; $0.stale = true } }
+              let saved = try? JSONDecoder().decode([PollRecord].self, from: data) else { return }
+        for r in saved {
+            if let reading = r.reading { state.update(r.key) { $0.reading = reading; $0.stale = true } }
+            if let until = r.rateLimitedUntil, until > now() { state.rateLimitedUntil[r.key] = until }
+            strikes[r.key] = r.strikes
+            last429[r.key] = r.last429
+            lastAttempt[r.key] = r.lastAttempt
+        }
     }
 
-    // ponytail: rewrites every reading per fetch and keeps removed accounts' last reading; fine for a handful of accounts.
+    // ponytail: rewrites every record per fetch and keeps removed accounts' records; fine for a handful of accounts.
     private func saveReadings() {
         guard let readingsFile else { return }
-        let saved = state.status.compactMap { key, status in status.reading.map { SavedReading(key: key, reading: $0) } }
+        let keys = Set(state.status.keys).union(state.rateLimitedUntil.keys).union(strikes.keys).union(last429.keys).union(lastAttempt.keys)
+        let saved = keys.map { key in
+            PollRecord(key: key, reading: state.status[key]?.reading, rateLimitedUntil: state.rateLimitedUntil[key],
+                       strikes: strikes[key], last429: last429[key], lastAttempt: lastAttempt[key])
+        }
         try? JSONEncoder().encode(saved).write(to: readingsFile, options: .atomic)
     }
 
@@ -309,7 +326,7 @@ public struct TaskSleeper: Sleeper {
     /// Nil when `key` may be fetched now.
     private func deferral(_ key: AccountKey) -> RefreshDeferral? {
         let now = now()
-        if let until = state.rateLimitedUntil[key.tool], now < until { return RefreshDeferral(until: until, rateLimitedBy: key.tool) }
+        if let until = state.rateLimitedUntil[key], now < until { return RefreshDeferral(until: until, rateLimitedBy: key.tool) }
         guard let last = [lastAttempt[key], state.status[key]?.reading?.fetchedAt].compactMap({ $0 }).max(),
               now.timeIntervalSince(last) < 60 else { return nil }
         return RefreshDeferral(until: last.addingTimeInterval(60), rateLimitedBy: nil)
@@ -339,23 +356,24 @@ public struct TaskSleeper: Sleeper {
     func apply(_ result: FetchResult, to key: AccountKey) {
         switch result {
         case .reading(let reading):
-            lastDelay[key.tool] = nil
-            state.rateLimitedUntil[key.tool] = nil
+            strikes[key] = nil
+            state.rateLimitedUntil[key] = nil
             state.update(key) {
                 $0.reading = reading
                 $0.stale = false
                 $0.error = nil
             }
-            saveReadings()
         case .unauthorized:
             state.update(key) { $0.stale = true; $0.error = "HTTP 401" }
         case .failed(let reason):
             state.update(key) { $0.stale = true; $0.error = reason }
         case .rateLimited(let retryAfter):
-            let delay = RateLimitPolicy.nextDelay(previous: lastDelay[key.tool], retryAfter: retryAfter)
-            lastDelay[key.tool] = delay
-            state.rateLimitedUntil[key.tool] = now().addingTimeInterval(delay)
+            let strike = (strikes[key] ?? 0) + 1
+            strikes[key] = strike
+            last429[key] = now()
+            state.rateLimitedUntil[key] = now().addingTimeInterval(RateLimitPolicy.nextDelay(strike: strike, retryAfter: retryAfter))
             state.update(key) { $0.stale = true; $0.error = "rate limited" }
         }
+        saveReadings()
     }
 }
