@@ -135,3 +135,7 @@ existing tag, or a missing signing identity, before it builds anything.
 
 Tool icons are from [CodexBar](https://github.com/steipete/CodexBar) (MIT); see
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+## License
+
+[MIT](LICENSE) © 2026 Simon Ren
