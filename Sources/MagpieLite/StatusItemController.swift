@@ -48,7 +48,10 @@ import Observation
             openManager()
             return
         }
-        NSApp.activate()
+        // The popover's glass looks different until its window is key, which needs the app active when it opens;
+        // the cooperative `activate()` can be refused here, leaving the inactive look until the first click.
+        // known-ceiling: `activate(ignoringOtherApps:)` is marked to-be-deprecated → when it warns, find the replacement.
+        NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
