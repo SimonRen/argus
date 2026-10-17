@@ -75,7 +75,7 @@ Prerequisites: macOS 26 and Xcode 26 (Swift 6.2 or later).
 | `make build` | app bundle in `build/Argus.app`, ad-hoc signed |
 | `make dev` | build, quit a running Argus, open the fresh build |
 | `make test` | the whole test suite (`swift test`) |
-| `make check` | version check + build + test — what CI runs |
+| `make check` | version check + sandbox guards + build + test — what CI runs |
 | `make install` / `make run` | copy to `~/Applications` (Launch at login needs it there) / and open it |
 | `make clean` | delete build products |
 

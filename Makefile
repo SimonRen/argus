@@ -3,7 +3,7 @@
 #   make build                   app bundle in build/, ad-hoc signed (the dev build)
 #   make dev                     build, quit a running Argus, open the fresh one
 #   make test                    swift test
-#   make check                   version check + build + test: the gate CI runs
+#   make check                   version check + sandbox guards + build + test: the gate CI runs
 #   make install                 copy the build to ~/Applications (Launch at login needs it there)
 #   make run                     install, then open the installed copy
 #   make bump VERSION=x.y.z      set VERSION and roll CHANGELOG.md's [Unreleased] into [x.y.z]
@@ -28,7 +28,7 @@ APP_VERSION := $(shell cat VERSION)
 BUILD_NUMBER := $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
 BIN = $$(swift build -c release $(SWIFT_FLAGS) --scratch-path "$(SCRATCH)" --show-bin-path)
 
-.PHONY: build dev test check version-check install run bump release publish clean
+.PHONY: build dev test check version-check guard install run bump release publish clean
 
 build:
 	swift build -c release $(SWIFT_FLAGS) --scratch-path "$(SCRATCH)" --product Argus
@@ -52,11 +52,19 @@ dev: build
 test:
 	swift test
 
-check: version-check build test
+check: version-check guard build test
 
 version-check:
 	@echo "$(APP_VERSION)" | grep -qEx '(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)' || { echo "VERSION must hold one x.y.z version (Semantic Versioning), not \"$(APP_VERSION)\"" >&2; exit 1; }
 	@grep -q '^## \[Unreleased\]$$' CHANGELOG.md || { echo "CHANGELOG.md needs a '## [Unreleased]' heading" >&2; exit 1; }
+
+# The core and the tests never reach the owner's home folder, login keychain, Application Support, standard defaults or
+# shared URL session; only the app target (Sources/Argus) builds the live environment. Tests run the real `security`
+# only through TestGuardedSecurity: given a keychain path that doesn't exist, `security` writes the login keychain.
+guard:
+	@! grep -rnE 'homeDirectoryForCurrentUser|NSHomeDirectory|URL\.homeDirectory|\.homeDirectory\b|applicationSupportDirectory|expandingTildeInPath|getenv\(|ProcessInfo\.processInfo\.environment|getpwuid|UserDefaults\.standard|URLSession\.shared|NSUserName' Sources/ArgusCore Tests || { echo "guard: the lines above reach the owner's real environment from the core or the tests" >&2; exit 1; }
+	@! grep -rnE '\.login\b|login\.keychain|Library/Keychains' Tests || { echo "guard: the lines above name the login keychain in the tests" >&2; exit 1; }
+	@! grep -rn 'SecurityCLI(' Tests | grep -v '^Tests/ArgusCoreTests/Support/' || { echo "guard: the lines above run the real security tool outside Tests/ArgusCoreTests/Support/ (use TestGuardedSecurity)" >&2; exit 1; }
 
 install: build
 	mkdir -p "$(HOME)/Applications"
