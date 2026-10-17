@@ -2,39 +2,6 @@ import Foundation
 import Testing
 import MagpieLiteCore
 
-/// One poller over a temp vault, fake tools and a stubbed network.
-@MainActor fileprivate final class Rig {
-    let box: TestSandbox
-    let vault: Vault
-    let clock = TestClock()
-    let stub: TestHTTPStub
-    let sleeper = RecordingSleeper()
-    let state: AppState
-    let tools: [Tool: FakeTool]
-    let poller: Poller
-
-    init(live: [Tool: [LiveState]] = [:], reply: @escaping @Sendable (TestHTTPStub.Request) async -> TestHTTPStub.Reply = okReply) throws {
-        box = try TestSandbox(security: ScriptedSecurity([.timedOut]))
-        vault = try Vault(supportRoot: box.supportRoot)
-        stub = TestHTTPStub(reply)
-        state = AppState(defaults: UserDefaults(suiteName: UUID().uuidString)!, now: clock.closure)
-        var fakes: [Tool: FakeTool] = [:]
-        for tool in Tool.allCases { fakes[tool] = FakeTool(tool, live[tool] ?? [.notSignedIn]) }
-        tools = fakes
-        let fetcher = AllowanceFetcher(http: HTTPClient(session: stub.session), version: "0.1.0", now: clock.closure)
-        poller = Poller(state: state, tools: Tool.allCases.map { fakes[$0]! }, vault: vault, fetcher: fetcher, sleeper: sleeper, now: clock.closure)
-    }
-
-    @discardableResult
-    func save(_ login: LiveLogin, allowIncomplete: Bool = false) async throws -> AccountKey {
-        try await vault.save(.signedIn(login), allowIncomplete: allowIncomplete)
-        return testKey(login)
-    }
-
-    nonisolated var tags: [String] { stub.requests.compactMap(requestTag) }
-    nonisolated func count(_ tag: String) -> Int { tags.filter { $0 == tag }.count }
-}
-
 /// Counts requests running at once.
 fileprivate final class Concurrency: @unchecked Sendable {
     private let lock = NSLock()
@@ -51,7 +18,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
         let a = testLogin(.claude, "a"), b = testLogin(.claude, "b"), c = testLogin(.claude, "c", complete: false)
         let e = testLogin(.codex, "e"), f = testLogin(.agy, "f")
         let concurrency = Concurrency()
-        let rig = try Rig(live: [.claude: [.signedIn(a)], .agy: [.signedIn(f)]]) { request in
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)], .agy: [.signedIn(f)]]) { request in
             concurrency.enter()
             try? await Task.sleep(for: .milliseconds(5))
             concurrency.leave()
@@ -74,7 +41,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
     }
 
     @Test func `REQ/F04-AC-4.c4 start runs a batch at launch, then sleeps the chosen interval`() async throws {
-        let rig = try Rig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]])
+        let rig = try PollerRig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]])
         rig.poller.start()
         #expect(await eventually { rig.sleeper.durations.count == 1 })
         #expect(rig.sleeper.durations == [.seconds(300)])
@@ -84,7 +51,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
 
     @Test func `REQ/F04-AC-4.c4 saved accounts are fetched in id order after the live login`() async throws {
         let logins = ["p", "q", "r", "s"].map { testLogin(.codex, $0) }
-        let rig = try Rig(live: [.codex: [.signedIn(logins[2])]])
+        let rig = try PollerRig(live: [.codex: [.signedIn(logins[2])]])
         for l in logins { try await rig.save(l) }
         await rig.poller.runBatch()
         let savedOrder = logins.filter { $0.label != "r@example.com" }.sorted { $0.identity.fileID < $1.identity.fileID }.map { String($0.label.prefix(1)) }
@@ -96,7 +63,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
     @Test func `REQ/F04-AC-4.c5 a 429 skips the vendor for 5 min growing by half to 30 min and a 200 resets it`() async throws {
         let replies = ReplyScript([.json(429, "{}"), .json(429, "{}"), .json(200, claudeUsageOK), .json(200, claudeUsageOK), .json(429, "{}")])
         let a = testLogin(.claude, "a"), b = testLogin(.claude, "b")
-        let rig = try Rig(live: [.claude: [.signedIn(a)]]) { _ in replies.next() }
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]]) { _ in replies.next() }
         try await rig.save(a)
         try await rig.save(b)
         let start = rig.clock.now
@@ -121,7 +88,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
 
     @Test func `REQ/F04-AC-4.c5 Retry-After sets the skip and the growth caps at 30 min`() async throws {
         let replies = ReplyScript([.json(429, "{}", headers: ["Retry-After": "120"])] + Array(repeating: .json(429, "{}"), count: 8))
-        let rig = try Rig(live: [.codex: [.signedIn(testLogin(.codex, "a"))]]) { _ in replies.next() }
+        let rig = try PollerRig(live: [.codex: [.signedIn(testLogin(.codex, "a"))]]) { _ in replies.next() }
         await rig.poller.runBatch()
         #expect(rig.state.rateLimitedUntil[.codex] == rig.clock.now + 120)
         var delays: [TimeInterval] = []
@@ -138,7 +105,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
     @Test func `REQ/F04-AC-4.c6 a failed fetch keeps the last good reading, marked stale with its age`() async throws {
         let replies = ReplyScript([.json(200, claudeUsageOK), .json(503, "busy"), .fail(.networkConnectionLost), .json(200, "garbage")])
         let a = testLogin(.claude, "a")
-        let rig = try Rig(live: [.claude: [.signedIn(a)]]) { _ in replies.next() }
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]]) { _ in replies.next() }
         await rig.poller.runBatch()
         let good = try #require(rig.state.status[testKey(a)]?.reading)
         #expect(good.fetchedAt == rig.clock.now)
@@ -158,7 +125,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
     @Test func `REQ/F04-AC-4.c13 a live fetch uses the live token and an expired one sends nothing and marks stale`() async throws {
         let fresh = testLogin(.claude, "a")
         let expired = testLogin(.claude, "a", expiry: Date(timeIntervalSince1970: 1_000))
-        let rig = try Rig(live: [.claude: [.signedIn(fresh), .signedIn(expired)]])
+        let rig = try PollerRig(live: [.claude: [.signedIn(fresh), .signedIn(expired)]])
         try await rig.save(testLogin(.claude, "a"))
         await rig.poller.runBatch()
         #expect(rig.tags == ["a"])
@@ -174,7 +141,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
 
     @Test func `REQ/F04-AC-4.c16 a Codex reading under 60 s old is reused instead of fetched`() async throws {
         let e = testLogin(.codex, "e"), g = testLogin(.codex, "g")
-        let rig = try Rig(live: [.codex: [.signedIn(e)]])
+        let rig = try PollerRig(live: [.codex: [.signedIn(e)]])
         try await rig.save(g)
         await rig.poller.runBatch()
         #expect(rig.tags == ["e", "g"])
@@ -190,7 +157,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
     }
 
     @Test func `a Claude reading is fetched again within 60 s`() async throws {
-        let rig = try Rig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]])
+        let rig = try PollerRig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]])
         await rig.poller.runBatch()
         rig.clock.advance(10)
         await rig.poller.refreshLive()
@@ -201,7 +168,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
 
     @Test func `REQ/F04-AC-4.c19 Refresh live accounts fetches only live logins and leaves the interval timer alone`() async throws {
         let a = testLogin(.claude, "a"), b = testLogin(.claude, "b"), f = testLogin(.agy, "f")
-        let rig = try Rig(live: [.claude: [.signedIn(a)], .agy: [.signedIn(f)]])
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)], .agy: [.signedIn(f)]])
         try await rig.save(b)
         rig.poller.start()
         #expect(await eventually { rig.sleeper.durations.count == 1 })
@@ -216,7 +183,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
 
     @Test func `REQ/F04-AC-4.c19 Refresh live accounts obeys a rate limit`() async throws {
         let replies = ReplyScript([.json(429, "{}")])
-        let rig = try Rig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]]) { _ in replies.next() }
+        let rig = try PollerRig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]]) { _ in replies.next() }
         await rig.poller.runBatch()
         rig.clock.advance(10)
         await rig.poller.refreshLive()
@@ -228,7 +195,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
     @Test func `REQ/F04-AC-4.c21 a refresh of an account in flight in a batch joins it`() async throws {
         let gate = TestGate()
         let a = testLogin(.claude, "a")
-        let rig = try Rig(live: [.claude: [.signedIn(a)]]) { request in
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]]) { request in
             if requestTag(request) == "a" { await gate.wait() }
             return okReply(request)
         }
@@ -248,7 +215,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
     @Test func `REQ/F04-AC-4.c21 a refresh of an account queued in a batch waits for the batch's fetch`() async throws {
         let gate = TestGate()
         let a = testLogin(.claude, "a"), b = testLogin(.claude, "b")
-        let rig = try Rig(live: [.claude: [.signedIn(a)]]) { request in
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]]) { request in
             if requestTag(request) == "a" { await gate.wait() }
             return okReply(request)
         }
@@ -270,7 +237,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
     @Test func `REQ/F04-AC-4.c21 a batch reaching an account whose refresh is in flight joins it`() async throws {
         let gate = TestGate()
         let b = testLogin(.codex, "b")
-        let rig = try Rig() { request in
+        let rig = try PollerRig() { request in
             if requestTag(request) == "b" { await gate.wait() }
             return okReply(request)
         }
@@ -289,7 +256,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
     @Test func `REQ/F04-AC-4.c21 a second batch request joins the running batch`() async throws {
         let gate = TestGate()
         let a = testLogin(.claude, "a")
-        let rig = try Rig(live: [.claude: [.signedIn(a)]]) { request in
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]]) { request in
             await gate.wait()
             return okReply(request)
         }
@@ -310,7 +277,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
     @Test func `REQ/F04-AC-4.c23 a live reading stays on the identity read with its token even if the login changes mid-request`() async throws {
         let gate = TestGate()
         let a = testLogin(.claude, "a"), b = testLogin(.claude, "b")
-        let rig = try Rig(live: [.claude: [.signedIn(a), .signedIn(b)]]) { request in
+        let rig = try PollerRig(live: [.claude: [.signedIn(a), .signedIn(b)]]) { request in
             await gate.wait()
             return okReply(request)
         }
@@ -329,7 +296,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
 
     @Test func `snapshot lists every vault entry plus an unsaved live login`() async throws {
         let a = testLogin(.claude, "a"), b = testLogin(.claude, "b"), c = testLogin(.claude, "c", complete: false)
-        let rig = try Rig(live: [.claude: [.signedIn(a)]])
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]])
         try await rig.vault.save(.signedIn(b), origin: .kept)
         try await rig.save(c, allowIncomplete: true)
         let bad = String(repeating: "e", count: 64)

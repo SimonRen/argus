@@ -135,3 +135,47 @@ func eventually(_ condition: @Sendable () -> Bool) async -> Bool {
     }
     return condition()
 }
+
+/// One poller over a temp vault, fake tools and a stubbed network; `renewing` attaches a renewer on the same network.
+@MainActor final class PollerRig {
+    let box: TestSandbox
+    let vault: Vault
+    let clock = TestClock()
+    let stub: TestHTTPStub
+    let sleeper = RecordingSleeper()
+    let state: AppState
+    let tools: [Tool: FakeTool]
+    let renewer: Renewer?
+    let poller: Poller
+
+    init(live: [Tool: [LiveState]] = [:], renewing: Bool = false,
+         reply: @escaping @Sendable (TestHTTPStub.Request) async -> TestHTTPStub.Reply = okReply) throws {
+        box = try TestSandbox(security: ScriptedSecurity([.timedOut]))
+        vault = try Vault(supportRoot: box.supportRoot)
+        stub = TestHTTPStub(reply)
+        state = AppState(defaults: UserDefaults(suiteName: UUID().uuidString)!, now: clock.closure)
+        var fakes: [Tool: FakeTool] = [:]
+        for tool in Tool.allCases { fakes[tool] = FakeTool(tool, live[tool] ?? [.notSignedIn]) }
+        tools = fakes
+        let http = HTTPClient(session: stub.session)
+        let adapters = Tool.allCases.map { fakes[$0]! as any ToolAdapter }
+        renewer = renewing ? Renewer(http: http, tools: adapters, now: clock.closure) : nil
+        let fetcher = AllowanceFetcher(http: http, version: "0.1.0", now: clock.closure)
+        poller = Poller(state: state, tools: adapters, vault: vault, fetcher: fetcher, sleeper: sleeper, now: clock.closure, renewer: renewer)
+    }
+
+    @discardableResult
+    func save(_ login: LiveLogin, allowIncomplete: Bool = false, origin: VaultOrigin = .save) async throws -> AccountKey {
+        try await vault.save(.signedIn(login), origin: origin, allowIncomplete: allowIncomplete)
+        return testKey(login)
+    }
+
+    nonisolated var tags: [String] { stub.requests.compactMap(requestTag) }
+    nonisolated func count(_ tag: String) -> Int { tags.filter { $0 == tag }.count }
+    /// Requests to an OAuth token endpoint.
+    nonisolated var tokenRequests: [TestHTTPStub.Request] { stub.requests.filter { isTokenRequest($0) } }
+}
+
+func isTokenRequest(_ request: TestHTTPStub.Request) -> Bool {
+    ["platform.claude.com", "auth.openai.com", "oauth2.googleapis.com"].contains(request.url.host ?? "")
+}

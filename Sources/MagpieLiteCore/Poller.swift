@@ -18,6 +18,7 @@ public struct TaskSleeper: Sleeper {
     let fetcher: AllowanceFetcher
     let sleeper: any Sleeper
     let now: @Sendable () -> Date
+    let renewer: Renewer?
 
     private var loop: Task<Void, Never>?
     private var batch: Task<Void, Never>?
@@ -25,15 +26,20 @@ public struct TaskSleeper: Sleeper {
     /// Accounts the running batch has yet to fetch, with the callers waiting for that fetch.
     private var queued: [AccountKey: [CheckedContinuation<Void, Never>]] = [:]
     private var lastDelay: [Tool: TimeInterval] = [:]
+    /// The payload an account had when it was flagged; new bytes clear the flag.
+    private var flaggedPayload: [AccountKey: String] = [:]
+    /// The previous interval batch's Claude live read (Keychain bytes, `oauthAccount` bytes).
+    private var claudeBaseline: (bytes: Data, account: Data?)?
 
     public init(state: AppState, tools: [any ToolAdapter], vault: Vault, fetcher: AllowanceFetcher,
-                sleeper: any Sleeper, now: @escaping @Sendable () -> Date) {
+                sleeper: any Sleeper, now: @escaping @Sendable () -> Date, renewer: Renewer? = nil) {
         self.state = state
         self.tools = Dictionary(tools.map { ($0.tool, $0) }, uniquingKeysWith: { first, _ in first })
         self.vault = vault
         self.fetcher = fetcher
         self.sleeper = sleeper
         self.now = now
+        self.renewer = renewer
     }
 
     /// One batch now, then forever: sleep the interval → batch.
@@ -73,6 +79,7 @@ public struct TaskSleeper: Sleeper {
             if case .signedIn(let login) = live {
                 let key = AccountKey(tool: tool, id: login.identity.fileID)
                 await fetchOnce(key) { await self.fetchLive(key, login) }
+                if tool != .claude { await syncBack(tool, seen: login, baseline: nil) }
             }
         }
         state.lastLiveFetch = now()
@@ -92,9 +99,23 @@ public struct TaskSleeper: Sleeper {
         await fetchOnce(key) { await self.fetchSaved(key, envelope) }
     }
 
-    /// Re-reads every tool's vault entries into state.
+    /// Re-reads every tool's vault entries into state; a flagged account whose saved login changed since is unflagged.
     public func reloadVault() async {
-        for tool in Tool.allCases { state.entries[tool] = await vault.entries(tool) }
+        for tool in Tool.allCases {
+            let entries = await vault.entries(tool)
+            state.entries[tool] = entries
+            for case .valid(let e) in entries {
+                let key = AccountKey(tool: tool, id: e.identity.fileID)
+                guard let flag = state.status[key]?.flag, flag == .needsSignIn || flag == .appNeedsUpdate,
+                      flaggedPayload[key] != e.payload else { continue }
+                if flag == .appNeedsUpdate {
+                    guard let client = e.clientId, OAuthClients.antigravitySecret(forClientID: client) != nil else { continue }
+                    if let renewer, await renewer.isBlocked(clientID: client) { continue }
+                }
+                state.update(key) { $0.flag = .ok }
+                flaggedPayload[key] = nil
+            }
+        }
     }
 
     // MARK: - Batch
@@ -117,11 +138,15 @@ public struct TaskSleeper: Sleeper {
             let live = await adapter.readLive()
             state.live[tool] = live
             var liveKey: AccountKey?
+            let baseline = claudeBaseline
+            if tool == .claude { claudeBaseline = nil }
             if case .signedIn(let login) = live {
                 let key = AccountKey(tool: tool, id: login.identity.fileID)
                 liveKey = key
                 await fetchOnce(key, fromBatch: true) { await self.fetchLive(key, login) }
                 done(key)
+                if tool == .claude { claudeBaseline = (login.bytes, login.claudeAccount) }
+                await syncBack(tool, seen: login, baseline: baseline)
             }
             if let previousLive { done(previousLive) }
             for envelope in plan[tool]! {
@@ -153,29 +178,95 @@ public struct TaskSleeper: Sleeper {
     // MARK: - Fetches
 
     private func fetchLive(_ key: AccountKey, _ login: LiveLogin) async {
+        guard !skipFetch(key) else { return }
         guard let token = login.tokens.accessToken, (login.tokens.accessTokenExpiry ?? .distantFuture) > now() else {
             return state.update(key) { $0.stale = true }
         }
-        await fetch(key, token: token, accountID: login.accountID)
+        apply(await fetcher.fetch(key.tool, accountKey: key.id, accessToken: token, accountID: login.accountID), to: key)
     }
 
+    /// A saved, non-live account: renewed first when its token is due, and once more after a 401.
     private func fetchSaved(_ key: AccountKey, _ envelope: VaultEnvelope) async {
-        guard let tokens = envelope.payloadBytes.flatMap({ tokenSet(key.tool, bytes: $0) }), let token = tokens.accessToken,
-              (tokens.accessTokenExpiry ?? .distantFuture) > now() else {
+        let flag = state.status[key]?.flag
+        guard flag != .needsSignIn, flag != .appNeedsUpdate, !skipFetch(key) else { return }
+        var envelope = envelope
+        var tokens = envelope.payloadBytes.flatMap { tokenSet(key.tool, bytes: $0) }
+        if let renewer, tokens?.accessToken == nil || (tokens?.accessTokenExpiry ?? .distantFuture) < now().addingTimeInterval(300) {
+            guard await renew(key, .nearExpiry(accessToken: tokens?.accessToken ?? ""), renewer, &envelope, &tokens) else { return }
+        }
+        guard let token = tokens?.accessToken, (tokens?.accessTokenExpiry ?? .distantFuture) > now() else {
             return state.update(key) { $0.stale = true }
         }
-        await fetch(key, token: token, accountID: envelope.accountID)
+        var result = await fetcher.fetch(key.tool, accountKey: key.id, accessToken: token, accountID: envelope.accountID)
+        if result == .unauthorized, let renewer {
+            guard await renew(key, .unauthorized(accessToken: token), renewer, &envelope, &tokens) else { return }
+            if let fresh = tokens?.accessToken, fresh != token {
+                result = await fetcher.fetch(key.tool, accountKey: key.id, accessToken: fresh, accountID: envelope.accountID)
+            }
+        }
+        apply(result, to: key)
     }
 
-    private func fetch(_ key: AccountKey, token: String, accountID: String?) async {
+    /// Renews `key` and reloads its entry. -> whether to go on and fetch.
+    private func renew(_ key: AccountKey, _ trigger: RenewalTrigger, _ renewer: Renewer,
+                       _ envelope: inout VaultEnvelope, _ tokens: inout TokenSet?) async -> Bool {
+        switch await renewer.renew(key, trigger: trigger, vault: vault) {
+        case .renewed, .skipped:
+            guard case .valid(let fresh)? = await vault.entry(key.tool, id: key.id) else { return false }
+            envelope = fresh
+            tokens = fresh.payloadBytes.flatMap { tokenSet(key.tool, bytes: $0) }
+            return true
+        case .refused:
+            mark(key, .needsSignIn, payload: envelope.payload)
+            return false
+        case .appNeedsUpdate:
+            for case .valid(let e) in state.entries[.agy] ?? [] where e.clientId == envelope.clientId {
+                mark(AccountKey(tool: .agy, id: e.identity.fileID), .appNeedsUpdate, payload: e.payload)
+            }
+            mark(key, .appNeedsUpdate, payload: envelope.payload)
+            return false
+        case .transient(let why):
+            state.update(key) { $0.stale = true; $0.error = why }
+            return false
+        }
+    }
+
+    private func mark(_ key: AccountKey, _ flag: AccountFlag, payload: String) {
+        flaggedPayload[key] = payload
+        state.update(key) { $0.flag = flag; $0.stale = true }
+    }
+
+    /// The vendor is rate limited (the account goes stale), or a Codex reading is under 60 s old.
+    private func skipFetch(_ key: AccountKey) -> Bool {
         if let until = state.rateLimitedUntil[key.tool], now() < until {
-            return state.update(key) { $0.stale = true }
+            state.update(key) { $0.stale = true }
+            return true
         }
         if key.tool == .codex, let fetched = state.status[key]?.reading?.fetchedAt, now().timeIntervalSince(fetched) < 60 {
-            return
+            return true
         }
-        let result = await fetcher.fetch(key.tool, accountKey: key.id, accessToken: token, accountID: accountID)
-        apply(result, to: key)
+        return false
+    }
+
+    // MARK: - Poll-time sync-back
+
+    /// Copies a saved live account's changed live bytes into its entry, re-checked inside the tool's exclusive section.
+    /// Claude writes only when the in-section read equals the previous interval batch's read.
+    private func syncBack(_ tool: Tool, seen login: LiveLogin, baseline: (bytes: Data, account: Data?)?) async {
+        guard login.identity.isComplete, let adapter = tools[tool],
+              case .valid(let entry)? = state.entries[tool]?.first(where: { $0.id == login.identity.fileID }),
+              entry.payloadBytes != login.bytes, tool != .claude || baseline != nil else { return }
+        let vault = vault, id = login.identity.fileID
+        let wrote = (try? await vault.exclusive(tool) { () async -> Bool in
+            guard case .signedIn(let fresh) = await adapter.readLive(), fresh.identity.isComplete, fresh.identity.fileID == id,
+                  case .valid(let current)? = await vault.entry(tool, id: id), current.identityKey == fresh.identity.key,
+                  current.payloadBytes != fresh.bytes else { return false }
+            if tool == .claude {
+                guard let baseline, fresh.bytes == baseline.bytes, fresh.claudeAccount == baseline.account else { return false }
+            }
+            return (try? await vault.save(.signedIn(fresh), origin: .syncBack)) != nil
+        }) ?? false
+        if wrote { await reloadVault() }
     }
 
     func apply(_ result: FetchResult, to key: AccountKey) {
