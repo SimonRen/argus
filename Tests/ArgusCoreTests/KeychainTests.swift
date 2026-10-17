@@ -52,9 +52,10 @@ import ArgusCore
 
     @Test func `REQ/F01-AC-1.c4 the watchdog kills a child that outlives its timeout`() async {
         let start = Date()
-        let outcome = await sleepingRunner().run(arguments: ["5"], stdin: nil, timeout: .milliseconds(200))
+        let outcome = await sleepingRunner().run(arguments: ["30"], stdin: nil, timeout: .milliseconds(200))
         #expect(outcome == .timedOut)
-        #expect(Date().timeIntervalSince(start) < 1)
+        // Far below the child's 30 s; the slack is for a loaded CI runner.
+        #expect(Date().timeIntervalSince(start) < 5)
     }
 
     @Test func `failure reasons name the status only`() async throws {

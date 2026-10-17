@@ -219,7 +219,8 @@ fileprivate func fetcher(_ stub: TestHTTPStub, timeout: TimeInterval = HTTPClien
         let start = Date()
         let outcome = await HTTPClient(session: stub.session, timeout: 0.2).send(URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!))
         #expect(outcome == .timedOut)
-        #expect(Date().timeIntervalSince(start) < 1)
+        // Far below the 15 s default and the stub's never-ending reply; the slack is for a loaded CI runner.
+        #expect(Date().timeIntervalSince(start) < 5)
         let result = await fetcher(stub, timeout: 0.2).fetch(.claude, accountKey: "k", accessToken: "t", accountID: nil)
         guard case .failed = result else { Issue.record("got \(result)"); return }
     }

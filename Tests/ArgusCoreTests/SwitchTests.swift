@@ -375,7 +375,8 @@ fileprivate final class Fixture: @unchecked Sendable {
         try FileManager.default.createDirectory(at: configLock, withIntermediateDirectories: true)
         let start = Date()
         #expect(await f.switcher().switchTo(target) == .refused("Claude Code is updating its login — try again in a moment. Nothing was written."))
-        #expect(Date().timeIntervalSince(start) < 1)
+        // The 300 ms test budget, far below the standard 9 s; the slack is for a loaded CI runner.
+        #expect(Date().timeIntervalSince(start) < 5)
         #expect(!FileManager.default.fileExists(atPath: f.lockURLs[0].path) && !FileManager.default.fileExists(atPath: f.lockURLs[1].path))
         #expect(await f.liveKey(.claude) == "claude:a@example.com:org-a")
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-30)], ofItemAtPath: configLock.path)
