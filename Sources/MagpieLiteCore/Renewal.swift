@@ -24,6 +24,8 @@ public actor Renewer {
     private var blocked: Set<String> = []
     /// Access tokens minted for agy's live login, per account, with the refresh token they came from.
     private var minted: [AccountKey: (refresh: String, token: String, expiry: Date)] = [:]
+    /// Renewed logins the vault couldn't take: their old refresh token is spent, so they are saved before anything else.
+    private var unsaved: [AccountKey: Data] = [:]
 
     static let claudeURL = URL(string: "https://platform.claude.com/v1/oauth/token")!
     static let claudeClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
@@ -64,8 +66,16 @@ public actor Renewer {
     }
 
     private func renewInSection(_ key: AccountKey, _ trigger: RenewalTrigger, _ vault: Vault) async -> RenewalOutcome {
+        if let pending = unsaved[key] {
+            guard (try? await vault.replacePayload(key.tool, id: key.id, bytes: pending, origin: .renewal)) != nil else {
+                return .transient("couldn't save the renewed login")
+            }
+            unsaved[key] = nil
+            return .renewed
+        }
         guard let adapter = tools[key.tool] else { return .skipped("no live reader") }
-        switch await adapter.readLive() {
+        let live = await adapter.readLive()
+        switch live {
         case .unknown, .unsupported: return .skipped("live login unreadable")
         case .signedIn(let live) where !live.identity.isComplete: return .skipped("live identity incomplete")
         case .signedIn(let live) where live.identity.fileID == key.id: return .skipped("live account")
@@ -74,6 +84,10 @@ public actor Renewer {
         guard case .valid(let envelope)? = await vault.entry(key.tool, id: key.id) else { return .skipped("entry gone or unreadable") }
         guard envelope.identity.isComplete, let payload = envelope.payloadBytes else { return .skipped("entry incomplete") }
         let tokens = tokenSet(key.tool, bytes: payload)
+        // The tool may be running on these very tokens under another account's name; renewing would spend its token.
+        if case .signedIn(let login) = live, let refresh = tokens?.refreshToken, login.tokens.refreshToken == refresh {
+            return .skipped("token is live")
+        }
         guard (tokens?.accessToken ?? "") == trigger.accessToken else { return .skipped("token already replaced") }
         guard let refresh = tokens?.refreshToken else { return .refused }
         let result: Result<Data, RenewalFailure>
@@ -92,6 +106,7 @@ public actor Renewer {
                 try await vault.replacePayload(key.tool, id: key.id, bytes: bytes, origin: .renewal)
                 return .renewed
             } catch {
+                unsaved[key] = bytes
                 return .transient("couldn't save the renewed login")
             }
         case .failure(.refused): return .refused

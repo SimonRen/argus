@@ -18,12 +18,15 @@ public struct CodexTool: ToolAdapter {
         "cli|" + sha256Hex(Data(env.codexHome.resolvingSymlinksInPath().path.utf8)).prefix(16)
     }
 
-    /// Top-level `cli_auth_credentials_store`; `file` when the file or key is absent.
-    func storeMode() -> String {
-        guard let text = try? String(contentsOf: env.codexHome.appending(path: "config.toml"), encoding: .utf8) else { return "file" }
+    /// Top-level `cli_auth_credentials_store`; `file` when the file or key is absent, nil when the file can't be read.
+    func storeMode() -> String? {
+        let url = env.codexHome.appending(path: "config.toml")
+        guard FileManager.default.fileExists(atPath: url.path) else { return "file" }
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         for line in text.split(whereSeparator: \.isNewline) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("[") { break }
+            // Only a table header ends the top level; an array's own lines can start with "[" too.
+            if trimmed.wholeMatch(of: /\[\[?[A-Za-z0-9_.\-"' ]+\]\]?\s*(#.*)?/) != nil { break }
             if let m = trimmed.wholeMatch(of: /cli_auth_credentials_store\s*=\s*["']([^"']*)["']\s*(#.*)?/) {
                 return String(m.1)
             }
@@ -32,15 +35,16 @@ public struct CodexTool: ToolAdapter {
     }
 
     public func readLive() async -> LiveState {
-        let mode = storeMode()
+        guard let mode = storeMode() else { return .unknown("config.toml can't be read") }
         switch mode {
         case "file":
             return readAuthFile()
         case "auto":
-            switch await env.keychainClient.read(service: Self.keyringService, account: keyringAccount) {
-            case .found: return .unsupported("Codex keeps this login in the Keychain")
-            case .notFound: return readAuthFile()
-            case .unknown(let reason): return .unknown(reason)
+            // Existence only: reading the secret would prompt, since the item trusts Codex, not `security`.
+            switch await env.keychainClient.exists(service: Self.keyringService, account: keyringAccount) {
+            case true?: return .unsupported("Codex keeps this login in the Keychain")
+            case false?: return readAuthFile()
+            case nil: return .unknown("the Keychain can't be read")
             }
         default:
             return .unsupported("Codex credential store \"\(mode)\"")

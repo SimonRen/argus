@@ -33,7 +33,10 @@ public struct SecurityCLI: SecurityRunning {
         let state = ChildState()
         let done = DispatchGroup()
         done.enter()
-        process.terminationHandler = { _ in done.leave() }
+        process.terminationHandler = { _ in
+            state.markExited()
+            done.leave()
+        }
         do {
             try process.run()
         } catch {
@@ -72,15 +75,20 @@ public struct SecurityCLI: SecurityRunning {
 private final class ChildState: @unchecked Sendable {
     private let lock = NSLock()
     private var out = Data(), err = Data()
-    private var finished = false, timedOut = false
+    private var finished = false, exited = false, timedOut = false
 
     func set(_ data: Data, stdout: Bool) {
         lock.withLock { if stdout { out = data } else { err = data } }
     }
 
+    /// The child has been reaped; its pid may already belong to another process.
+    func markExited() {
+        lock.withLock { exited = true }
+    }
+
     func markTimedOutIfRunning() -> Bool {
         lock.withLock {
-            if finished { return false }
+            if finished || exited { return false }
             timedOut = true
             return true
         }
@@ -119,12 +127,32 @@ public struct Keychain: Sendable {
                                        stdin: nil, timeout: timeout)
         switch outcome {
         case .exited(0, let stdout, _):
-            return .found(stdout.last == 0x0A ? stdout.dropLast() : stdout)
+            return .found(Self.decoded(stdout.last == 0x0A ? stdout.dropLast() : stdout))
         case .exited(44, _, _):
             return .notFound
         default:
             return .unknown(Self.reason(outcome))
         }
+    }
+
+    /// Whether the item exists, read without its secret, so no access prompt: nil when that can't be told.
+    public func exists(service: String, account: String) async -> Bool? {
+        if fileMissing { return nil }
+        switch await runner.run(arguments: ["find-generic-password", "-s", service, "-a", account] + Self.pathWords(target), stdin: nil, timeout: timeout) {
+        case .exited(0, _, _): return true
+        case .exited(44, _, _): return false
+        default: return nil
+        }
+    }
+
+    /// `security -w` prints a value as is only when every byte is printable ASCII (0x20–0x7E), else as lowercase hex.
+    /// Hex is decoded when the bytes are UTF-8 text that needed it; every stored value here is text (JSON or an envelope).
+    // ponytail: a printable value made only of hex digits whose decoding is UTF-8 with a control byte would be misread.
+    static func decoded(_ printed: Data) -> Data {
+        let hexDigits = printed.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
+        guard !printed.isEmpty, hexDigits, let bytes = hexData(String(decoding: printed, as: UTF8.self)),
+              bytes.contains(where: { $0 < 0x20 || $0 > 0x7E }), String(data: bytes, encoding: .utf8) != nil else { return Data(printed) }
+        return bytes
     }
 
     public func write(service: String, account: String, value: Data) async -> KeychainWrite {
@@ -179,7 +207,7 @@ public struct Keychain: Sendable {
     }
 
     private static func quoted(_ word: String) -> String {
-        guard word.isEmpty || word.contains(where: { $0 == " " || $0 == "\"" || $0 == "\\" }) else { return word }
+        guard word.isEmpty || !word.utf8.allSatisfy(isPlain) else { return word }
         return "\"" + word.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
 

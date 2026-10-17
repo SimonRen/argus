@@ -27,6 +27,10 @@ public enum SaveResult: Sendable, Equatable {
     public private(set) var notice: String?
     /// The notice offers Restart for a running Codex app-server.
     public private(set) var offersRestart = false
+    /// The notice reports something that went wrong (a refusal, a failure), not a success.
+    public private(set) var noticeIsProblem = false
+    /// The latest app-server restart; only its result is shown.
+    @ObservationIgnored private var restartID = 0
     /// A short-lived hint, e.g. after a refresh that came too soon; it clears itself.
     public private(set) var hint: String?
     @ObservationIgnored private var hintTimer: Task<Void, Never>?
@@ -62,20 +66,23 @@ public enum SaveResult: Sendable, Equatable {
             result = .refused("couldn't save")
         }
         await poller.reloadVault()
-        show(result.message)
+        if case .refused = result { show(result.message, problem: true) } else { show(result.message) }
         return result
     }
 
+    /// The notice shows as soon as the switch settles; the live refresh, which a running batch can hold up, comes after.
     public func switchTo(_ key: AccountKey) async -> SwitchOutcome {
         let outcome = await switcher.switchTo(key)
         await poller.reloadVault()
-        await poller.refreshLive()
-        switch outcome {
-        case .switched(let text, let daemonRunning) where daemonRunning && restartDaemon != nil: await restartCodexDaemon(after: text)
-        case .switched(let text, _): show(text)
-        case .refused(let text), .failed(let text): show(text)
-        case .noOp: break
+        await poller.rereadLive()
+        guard case .switched(let text, let daemonRunning) = outcome else {
+            if case .refused(let text) = outcome { show(text, problem: true) }
+            if case .failed(let text) = outcome { show(text, problem: true) }
+            return outcome
         }
+        let refresh = Task { await poller.refreshLive() }
+        if daemonRunning, restartDaemon != nil { await restartCodexDaemon(after: text) } else { show(text) }
+        await refresh.value
         return outcome
     }
 
@@ -107,27 +114,31 @@ public enum SaveResult: Sendable, Equatable {
     public func dismissNotice() {
         notice = nil
         offersRestart = false
+        noticeIsProblem = false
     }
 
     /// Restarts the running Codex app-server so it picks up the new login; `lead` is the switch notice it follows.
     /// A failure offers Restart again; a notice shown meanwhile is left in place.
     public func restartCodexDaemon(after lead: String? = nil) async {
         guard let restartDaemon else { return }
+        restartID += 1
+        let id = restartID
         let prefix = lead.map { $0 + " " } ?? ""
         let pending = prefix + "Restarting the Codex app-server so open sessions move over; a running reply gets up to a minute to finish."
         show(pending)
         let failure = await restartDaemon()
-        guard notice == pending else { return }
+        guard id == restartID, notice == pending else { return }
         if let failure {
-            show(prefix + "The Codex app-server didn't restart (\(failure)), so it still uses the previous account.", offersRestart: true)
+            show(prefix + "The Codex app-server didn't restart (\(failure)), so it still uses the previous account.", offersRestart: true, problem: true)
         } else {
             show(prefix + "Restarted the Codex app-server; open sessions reconnect on their own.")
         }
     }
 
-    private func show(_ text: String, offersRestart: Bool = false) {
+    private func show(_ text: String, offersRestart: Bool = false, problem: Bool = false) {
         notice = text
         self.offersRestart = offersRestart
+        noticeIsProblem = problem
     }
 }
 

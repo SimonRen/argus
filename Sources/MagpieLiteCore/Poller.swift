@@ -51,7 +51,7 @@ public struct TaskSleeper: Sleeper {
     private var backoffEnd: [AccountKey: Date] = [:]
     /// When each account's last allowance request was sent.
     private var lastAttempt: [AccountKey: Date] = [:]
-    /// The payload an account had when it was flagged; new bytes clear the flag.
+    /// sha256 of the payload an account had when it was flagged; new bytes clear the flag.
     private var flaggedPayload: [AccountKey: String] = [:]
     /// The previous interval batch's Claude live read (Keychain bytes, `oauthAccount` bytes).
     private var claudeBaseline: (bytes: Data, account: Data?)?
@@ -79,6 +79,8 @@ public struct TaskSleeper: Sleeper {
         var strikes: Int?
         var backoffEnd: Date?
         var lastAttempt: Date?
+        /// A refused sign-in, with the digest of the payload it was refused for; it holds until the saved login changes.
+        var needsSignIn: String?
     }
 
     /// What the last launch saved: readings shown stale until fetched again, backoffs and attempts still honoured.
@@ -91,6 +93,10 @@ public struct TaskSleeper: Sleeper {
             strikes[r.key] = r.strikes
             backoffEnd[r.key] = r.backoffEnd
             lastAttempt[r.key] = r.lastAttempt
+            if let digest = r.needsSignIn {
+                flaggedPayload[r.key] = digest
+                state.update(r.key) { $0.flag = .needsSignIn; $0.stale = true }
+            }
         }
     }
 
@@ -100,9 +106,10 @@ public struct TaskSleeper: Sleeper {
         let keys = Set(state.status.keys).union(state.rateLimitedUntil.keys).union(strikes.keys).union(backoffEnd.keys).union(lastAttempt.keys)
         let saved = keys.map { key in
             PollRecord(key: key, reading: state.status[key]?.reading, rateLimitedUntil: state.rateLimitedUntil[key],
-                       strikes: strikes[key], backoffEnd: backoffEnd[key], lastAttempt: lastAttempt[key])
+                       strikes: strikes[key], backoffEnd: backoffEnd[key], lastAttempt: lastAttempt[key],
+                       needsSignIn: state.status[key]?.flag == .needsSignIn ? flaggedPayload[key] : nil)
         }
-        try? JSONEncoder().encode(saved).write(to: readingsFile, options: .atomic)
+        if let data = try? JSONEncoder().encode(saved) { _ = writeFileAtomically(data, to: readingsFile) }
     }
 
     /// One batch now, then forever: sleep the interval → batch.
@@ -155,7 +162,6 @@ public struct TaskSleeper: Sleeper {
                 if tool != .claude { await syncBack(tool, seen: login, baseline: nil) }
             }
         }
-        if sent || deferrals.isEmpty { state.lastLiveFetch = now() }
         return sent ? nil : deferrals.min { $0.until < $1.until }
     }
 
@@ -198,7 +204,7 @@ public struct TaskSleeper: Sleeper {
             for case .valid(let e) in entries {
                 let key = AccountKey(tool: tool, id: e.identity.fileID)
                 guard let flag = state.status[key]?.flag, flag == .needsSignIn || flag == .appNeedsUpdate,
-                      flaggedPayload[key] != e.payload else { continue }
+                      flaggedPayload[key] != sha256Hex(Data(e.payload.utf8)) else { continue }
                 if flag == .appNeedsUpdate {
                     guard let client = e.clientId, OAuthClients.antigravitySecret(forClientID: client) != nil else { continue }
                     if let renewer, await renewer.isBlocked(clientID: client) { continue }
@@ -246,7 +252,6 @@ public struct TaskSleeper: Sleeper {
                 done(key)
             }
         }
-        state.lastLiveFetch = now()
         for key in Array(queued.keys) { done(key) }
     }
 
@@ -334,8 +339,9 @@ public struct TaskSleeper: Sleeper {
     }
 
     private func mark(_ key: AccountKey, _ flag: AccountFlag, payload: String) {
-        flaggedPayload[key] = payload
+        flaggedPayload[key] = sha256Hex(Data(payload.utf8))
         state.update(key) { $0.flag = flag; $0.stale = true }
+        saveReadings()
     }
 
     /// Runs `send` after every earlier usage request to `tool` has finished and `spacing` has passed since the last.
@@ -411,6 +417,8 @@ public struct TaskSleeper: Sleeper {
                 $0.stale = false
                 $0.error = nil
             }
+            // "Live updated" means a live reading arrived, not that one was asked for.
+            if case .signedIn(let login) = state.live[key.tool], login.identity.fileID == key.id { state.lastLiveFetch = now() }
         case .unauthorized:
             state.update(key) { $0.stale = true; $0.error = "HTTP 401" }
         case .failed(let reason):

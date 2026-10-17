@@ -262,7 +262,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         let completeBytes = try Data(contentsOf: f.box.supportRoot.appending(path: "vault/claude/\(complete.id).json"))
         try await f.seedClaude("b")
         let target = try await f.saveLive(.claude)
-        try await f.seedClaude("a")
+        try await f.seedClaude("c")
         try f.box.write("home/.claude.json", "{\"numStartups\": 3}\n")
         guard case .switched = await f.switcher().switchTo(target) else { Issue.record("switch failed"); return }
         let entries = await f.vault.entries(.claude)
@@ -270,13 +270,31 @@ fileprivate final class Fixture: @unchecked Sendable {
         let incomplete = entries.compactMap { if case .valid(let e) = $0, !e.identity.isComplete { e } else { nil } }
         #expect(incomplete.count == 1)
         #expect(incomplete.first?.kept == true)
-        #expect(incomplete.first?.identityKey == "claude:incomplete:" + sha256Hex(utf8("test-refresh-a")))
+        #expect(incomplete.first?.identityKey == "claude:incomplete:" + sha256Hex(utf8("test-refresh-c")))
+        guard !incomplete.isEmpty else { return }
         #expect(try Data(contentsOf: f.box.supportRoot.appending(path: "vault/claude/\(complete.id).json")) == completeBytes)
         await #expect(throws: VaultError("incomplete identity")) {
             try await f.vault.save(.signedIn(LiveLogin(identity: incomplete[0].identity, plan: nil, label: "", bytes: utf8("x"),
                                                        tokens: TokenSet(accessToken: nil, accessTokenExpiry: nil, refreshToken: nil),
                                                        clientID: nil, claudeAccount: nil, accountID: nil)))
         }
+    }
+
+    @Test func `a live login whose tokens are already saved under another account is never filed under the wrong one`() async throws {
+        let f = try Fixture()
+        try await f.seedClaude("a")
+        _ = try await f.saveLive(.claude)
+        try await f.seedClaude("b")
+        let target = try await f.saveLive(.claude)
+        let targetBytes = try Data(contentsOf: f.box.supportRoot.appending(path: "vault/claude/\(target.id).json"))
+        // Claude Code's Keychain holds a's tokens while its config names b (a switch cut short, a copied config).
+        try await f.seedClaude("a")
+        try f.box.write("home/.claude.json", claudeConfig(claudeAccount("b")))
+        guard case .signedIn(let torn) = await ClaudeTool(env: f.box.env).readLive() else { Issue.record("not signed in"); return }
+        await #expect(throws: VaultError("this login's tokens are already saved for a@example.com, so its account record looks wrong", sharedWith: "a@example.com")) {
+            try await f.vault.save(.signedIn(torn), origin: .syncBack)
+        }
+        #expect(try Data(contentsOf: f.box.supportRoot.appending(path: "vault/claude/\(target.id).json")) == targetBytes)
     }
 
     // MARK: F03-AC-3.c7
@@ -314,6 +332,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         #expect(try String(contentsOf: f.configURL, encoding: .utf8) == expected)
         #expect((try FileManager.default.attributesOfItem(atPath: f.configURL.path))[.posixPermissions] as? Int == 0o600)
         #expect(await f.liveKey(.claude) == "claude:b@example.com:org-b")
+        #expect(!FileManager.default.fileExists(atPath: f.box.supportRoot.appending(path: "vault/claude-switch.json").path))
         #expect(f.box.violations.isEmpty)
     }
 
@@ -373,6 +392,83 @@ fileprivate final class Fixture: @unchecked Sendable {
         try f.box.write("home/.claude.json", "{\n  \"theme\": \"dark\"\n}\n")
         _ = await f.switcher().switchTo(target)
         #expect(try String(contentsOf: f.configURL, encoding: .utf8) == "{\"oauthAccount\":\(claudeAccount("b")),\n  \"theme\": \"dark\"\n}\n")
+    }
+
+    @Test func `the config splice skips a UTF-8 byte order mark instead of adding a second oauthAccount`() async throws {
+        let f = try Fixture()
+        try await f.seedClaude("b")
+        let target = try await f.saveLive(.claude)
+        try await f.seedClaude("a")
+        let bom = Data([0xEF, 0xBB, 0xBF])
+        try (bom + utf8(claudeConfig(claudeAccount("a")))).write(to: f.configURL)
+        guard case .switched = await f.switcher().switchTo(target) else { Issue.record("switch failed"); return }
+        #expect(try Data(contentsOf: f.configURL) == bom + utf8(claudeConfig(claudeAccount("b"))))
+    }
+
+    // MARK: Interrupted switches
+
+    @Test func `a Claude switch cut short after the Keychain write is finished at launch, the config naming the account the Keychain holds`() async throws {
+        let f = try Fixture()
+        try await f.seedClaude("b")
+        let target = try await f.saveLive(.claude)
+        try await f.seedClaude("a")
+        let journal = f.box.supportRoot.appending(path: "vault/claude-switch.json")
+        try #"{"target":"\#(target.id)","keychainBefore":"\#(sha256Hex(utf8(claudeItem("a"))))","accountBefore":"\#(sha256Hex(utf8(claudeAccount("a"))))"}"#
+            .write(to: journal, atomically: true, encoding: .utf8)
+        // The app quit between the two writes: the Keychain holds b, the config still names a.
+        #expect(await f.box.keychain.write(service: claudeService, account: "tester", value: utf8(claudeItem("b"))) == .written)
+        await f.switcher().settleInterruptedSwitch()
+        #expect(await f.liveKey(.claude) == "claude:b@example.com:org-b")
+        #expect(!FileManager.default.fileExists(atPath: journal.path))
+    }
+
+    @Test func `a journal whose switch never wrote, or whose config was rewritten since, changes nothing`() async throws {
+        for rewritten in [false, true] {
+            let f = try Fixture()
+            try await f.seedClaude("b")
+            let target = try await f.saveLive(.claude)
+            try await f.seedClaude("a")
+            let journal = f.box.supportRoot.appending(path: "vault/claude-switch.json")
+            try #"{"target":"\#(target.id)","keychainBefore":"\#(sha256Hex(utf8(claudeItem("a"))))","accountBefore":"\#(sha256Hex(utf8(claudeAccount("a"))))"}"#
+                .write(to: journal, atomically: true, encoding: .utf8)
+            if rewritten { try await f.seedClaude("c") }   // Claude Code's own /login since
+            await f.switcher().settleInterruptedSwitch()
+            #expect(await f.liveKey(.claude) == (rewritten ? "claude:c@example.com:org-c" : "claude:a@example.com:org-a"))
+            #expect(!FileManager.default.fileExists(atPath: journal.path))
+        }
+    }
+
+    @Test func `a Claude switch whose rollback fails is settled on the target, never left half-switched`() async throws {
+        let f = try Fixture()
+        try await f.seedClaude("b")
+        let target = try await f.saveLive(.claude)
+        try await f.seedClaude("a")
+        let outcome = await f.switcher(faults: SwitchFaults(failAt: .writeClaudeConfig, failRestore: true)).switchTo(target)
+        #expect(outcome == .failed("Switch failed and couldn't be undone, so Claude Code now signs in as b@example.com."))
+        #expect(await f.liveKey(.claude) == "claude:b@example.com:org-b")
+        #expect(!FileManager.default.fileExists(atPath: f.box.supportRoot.appending(path: "vault/claude-switch.json").path))
+    }
+
+    @Test func `a Codex switch writes through a symlinked auth.json and creates a missing Codex folder`() async throws {
+        let f = try Fixture()
+        try f.seedCodex("b")
+        let target = try await f.saveLive(.codex)
+        try f.seedCodex("a")
+        let dotfiles = f.box.home.appending(path: "dotfiles")
+        try FileManager.default.createDirectory(at: dotfiles, withIntermediateDirectories: true)
+        let real = dotfiles.appending(path: "auth.json")
+        try FileManager.default.moveItem(at: f.authURL, to: real)
+        try FileManager.default.createSymbolicLink(at: f.authURL, withDestinationURL: real)
+        guard case .switched = await f.switcher().switchTo(target) else { Issue.record("switch failed"); return }
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: f.authURL.path)) != nil)
+        #expect(try Data(contentsOf: real) == utf8(codexAuth("b")))
+
+        let g = try Fixture()
+        try g.seedCodex("b")
+        let saved = try await g.saveLive(.codex)
+        try FileManager.default.removeItem(at: g.box.codexHome)
+        guard case .switched = await g.switcher().switchTo(saved) else { Issue.record("switch into a missing folder failed"); return }
+        #expect(try Data(contentsOf: g.authURL) == utf8(codexAuth("b")))
     }
 
     // MARK: F03-AC-3.c8

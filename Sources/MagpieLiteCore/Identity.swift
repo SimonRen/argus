@@ -242,7 +242,7 @@ func parseRFC3339(_ s: String) -> Date? {
 /// re-serializing the rest of the file.
 func topLevelValueRange(of key: String, in data: Data) -> Range<Int>? {
     let b = [UInt8](data)
-    var i = 0
+    var i = b.starts(with: [0xEF, 0xBB, 0xBF]) ? 3 : 0   // a UTF-8 BOM, which JSONSerialization accepts too
     func skipWS() { while i < b.count, [0x20, 0x09, 0x0A, 0x0D].contains(b[i]) { i += 1 } }
     func skipString() -> Range<Int>? {
         guard i < b.count, b[i] == 0x22 else { return nil }

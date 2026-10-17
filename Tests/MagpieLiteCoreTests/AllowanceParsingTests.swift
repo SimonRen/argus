@@ -125,10 +125,17 @@ fileprivate func fetcher(_ stub: TestHTTPStub, timeout: TimeInterval = HTTPClien
         #expect(request.header("User-Agent") == "magpie-lite/0.1.0")
     }
 
-    @Test func `REQ/F04-AC-4.c14 a non-200 Claude status and body are kept as the error detail`() async {
-        let stub = TestHTTPStub { _ in .json(500, #"{"error":"overloaded"}"#) }
-        let result = await fetcher(stub).fetch(.claude, accountKey: "k", accessToken: "test-access-1", accountID: nil)
-        #expect(result == .failed(#"HTTP 500: {"error":"overloaded"}"#))
+    @Test func `REQ/F04-AC-4.c14 a non-200 status keeps the vendor's message as the error detail, never raw body bytes`() async {
+        let cases: [(String, String)] = [
+            (#"{"error":"overloaded"}"#, "HTTP 500: overloaded"),
+            (#"{"error":{"type":"x","message":"Your account is suspended"}}"#, "HTTP 500: Your account is suspended"),
+            (#"{"message":"slow down"}"#, "HTTP 500: slow down"),
+            ("Authorization: Bearer test-secret", "HTTP 500"),
+        ]
+        for (body, expected) in cases {
+            let stub = TestHTTPStub { _ in .json(500, body) }
+            #expect(await fetcher(stub).fetch(.claude, accountKey: "k", accessToken: "test-access-1", accountID: nil) == .failed(expected))
+        }
     }
 
     @Test func `status mapping for 401, 429 and a long error body`() async {
@@ -137,7 +144,8 @@ fileprivate func fetcher(_ stub: TestHTTPStub, timeout: TimeInterval = HTTPClien
             (.json(401, "{}"), .unauthorized),
             (.json(429, "{}", headers: ["Retry-After": "120"]), .rateLimited(retryAfter: 120)),
             (.json(429, "{}"), .rateLimited(retryAfter: nil)),
-            (.json(403, long), .failed("HTTP 403: " + String(long.prefix(200)))),
+            (.json(403, long), .failed("HTTP 403")),
+            (.json(403, #"{"message":"\#(long)"}"#), .failed("HTTP 403: " + String(long.prefix(160)))),
             (.json(200, "not json"), .failed("unexpected response")),
             (.fail(.notConnectedToInternet), .failed("network error")),
         ]

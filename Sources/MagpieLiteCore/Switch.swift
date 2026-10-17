@@ -14,10 +14,13 @@ public struct SwitchFaults: Sendable {
     public var failAt: SwitchStep?
     /// Runs after every write, before the verify reads.
     public var beforeVerify: (@Sendable () async -> Void)?
+    /// Every rollback write fails.
+    public var failRestore: Bool
 
-    public init(failAt: SwitchStep? = nil, beforeVerify: (@Sendable () async -> Void)? = nil) {
+    public init(failAt: SwitchStep? = nil, beforeVerify: (@Sendable () async -> Void)? = nil, failRestore: Bool = false) {
         self.failAt = failAt
         self.beforeVerify = beforeVerify
+        self.failRestore = failRestore
     }
 }
 
@@ -190,7 +193,62 @@ public struct Switcher: Sendable {
             if held == nil { return .refused("Claude Code is updating its login — try again in a moment. Nothing was written.") }
         }
         defer { held?.release() }
+        if key.tool == .claude, await !settleClaude() {
+            return .refused("An earlier Claude Code switch couldn't be finished yet — try again in a moment. Nothing was written.")
+        }
         return await swap(to: target, payload: payload)
+    }
+
+    /// Finishes a Claude switch cut short by the app quitting or a failed rollback; run at launch, under Claude Code's locks.
+    public func settleInterruptedSwitch() async {
+        _ = try? await vault.exclusive(.claude) {
+            guard FileManager.default.fileExists(atPath: journalURL.path),
+                  let held = await ClaudeLocks(home: env.home, configURL: claude.configURL, timing: lockTiming, now: now).acquire() else { return }
+            defer { held.release() }
+            _ = await settleClaude()
+        }
+    }
+
+    // MARK: - Claude journal
+
+    /// What a Claude switch is about to change, as digests only, kept until the switch is verified or undone.
+    struct ClaudeJournal: Codable {
+        /// The target's vault id.
+        let target: String
+        /// sha256 of the Keychain value and of the config's `oauthAccount` bytes before the switch; nil when absent.
+        let keychainBefore: String?
+        let accountBefore: String?
+    }
+
+    private var journalURL: URL { vault.vaultURL.appending(path: "claude-switch.json") }
+
+    private func removeJournal() { try? FileManager.default.removeItem(at: journalURL) }
+
+    /// Settles a journalled Claude switch: when the Keychain changed but the config still names the account from
+    /// before, the switch wrote the Keychain and stopped, so the config gets the target's account. Anything else (nothing
+    /// written, or the config rewritten since) is left as is. -> false, journal kept, when it can't be read or written.
+    // ponytail: a Keychain changed by Claude Code renewing the old account before the write landed reads the same as a
+    // renewed target; the write lands within the switch's second, so the target is assumed.
+    private func settleClaude() async -> Bool {
+        guard let data = try? Data(contentsOf: journalURL) else { return true }
+        guard let journal = try? JSONDecoder().decode(ClaudeJournal.self, from: data) else {
+            removeJournal()
+            return true
+        }
+        let keychainNow: Data?
+        switch await keychain.read(service: ClaudeTool.service, account: claude.keychainAccount) {
+        case .found(let value): keychainNow = value
+        case .notFound: keychainNow = nil
+        case .unknown: return false
+        }
+        if keychainNow.map(sha256Hex) != journal.keychainBefore, claude.readAccount().bytes.map(sha256Hex) == journal.accountBefore {
+            let config = claude.configURL.resolvingSymlinksInPath()
+            guard case .valid(let target)? = await vault.entry(.claude, id: journal.target), let account = target.claudeAccount,
+                  let current = fileSnapshot(config), let spliced = Self.splice(account: Data(account.utf8), into: current),
+                  writeFileAtomically(spliced, to: config) else { return false }
+        }
+        removeJournal()
+        return true
     }
 
     private func swap(to target: VaultEnvelope, payload: Data) async -> SwitchOutcome {
@@ -221,9 +279,16 @@ public struct Switcher: Sendable {
             written.ok = await verify(target, payload: payload, written: written.claudeKeychain)
         }
         guard written.ok else {
-            await restore(snapshots)
-            return .failed("Switch failed — \(name) still uses \(outgoing)")
+            if await restore(snapshots) {
+                if tool == .claude { removeJournal() }
+                return .failed("Switch failed — \(name) still uses \(outgoing)")
+            }
+            if tool == .claude, await settleClaude() {
+                return .failed("Switch failed and couldn't be undone, so Claude Code now signs in as \(target.label).")
+            }
+            return .failed("Switch failed and couldn't be fully undone — \(name)'s login may be mixed. Switch again to settle it.")
         }
+        if tool == .claude { removeJournal() }
         return notice(target)
     }
 
@@ -238,6 +303,9 @@ public struct Switcher: Sendable {
                 try await vault.save(live, origin: .kept)
             }
             return true
+        } catch let error as VaultError where error.sharedWith != nil {
+            // Those exact tokens are already saved under another account: nothing of the outgoing login to keep.
+            return true
         } catch {
             return false
         }
@@ -251,6 +319,9 @@ public struct Switcher: Sendable {
             let service = ClaudeTool.service, account = claude.keychainAccount
             guard faults.failAt != .writeClaudeKeychain, let before = await keychainSnapshot(service, account),
                   let value = Self.claudeItem(target: payload, live: before) else { return (false, nil) }
+            let journal = ClaudeJournal(target: target.identity.fileID, keychainBefore: before.map(sha256Hex),
+                                        accountBefore: claude.readAccount().bytes.map(sha256Hex))
+            guard let record = try? JSONEncoder().encode(journal), writeFileAtomically(record, to: journalURL) else { return (false, nil) }
             snapshots.append(.keychain(service: service, account: account, before: before))
             guard await keychain.write(service: service, account: account, value: value) == .written else { return (false, nil) }
             // An existing `.credentials.json` gets the same value so running sessions see its mtime change; never created, best effort.
@@ -265,7 +336,9 @@ public struct Switcher: Sendable {
             snapshots.append(.file(config, before: current))
             return (writeFileAtomically(spliced, to: config), value)
         case .codex:
-            let auth = env.codexHome.appending(path: "auth.json")
+            try? FileManager.default.createDirectory(at: env.codexHome, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            // Through a symlink, not over it: a dotfiles-managed auth.json stays linked.
+            let auth = env.codexHome.appending(path: "auth.json").resolvingSymlinksInPath()
             guard faults.failAt != .writeCodexAuth, let before = fileSnapshot(auth) else { return (false, nil) }
             snapshots.append(.file(auth, before: before))
             return (writeFileAtomically(payload, to: auth), nil)
@@ -275,11 +348,11 @@ public struct Switcher: Sendable {
             guard await keychain.write(service: AgyTool.service, account: AgyTool.account, value: payload) == .written else { return (false, nil) }
             let folder = agyFolder
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            let tokenFile = folder.appending(path: "antigravity-oauth-token")
+            let tokenFile = folder.appending(path: "antigravity-oauth-token").resolvingSymlinksInPath()
             guard faults.failAt != .writeAgyTokenFile, let token = agyTokenJSON(payload), let tokenBefore = fileSnapshot(tokenFile) else { return (false, nil) }
             snapshots.append(.file(tokenFile, before: tokenBefore))
             guard writeFileAtomically(token, to: tokenFile) else { return (false, nil) }
-            let settings = folder.appending(path: "settings.json")
+            let settings = folder.appending(path: "settings.json").resolvingSymlinksInPath()
             guard faults.failAt != .writeAgySettings, let settingsBefore = fileSnapshot(settings) else { return (false, nil) }
             guard let old = settingsBefore else { return (true, nil) }
             guard var json = jsonObject(old) else { return (false, nil) }
@@ -363,19 +436,23 @@ public struct Switcher: Sendable {
         return ok && faults.failAt != .verify
     }
 
-    private func restore(_ snapshots: [Snapshot]) async {
+    /// Puts every snapshot back, newest first, trying each even after one fails. -> whether all went back.
+    private func restore(_ snapshots: [Snapshot]) async -> Bool {
+        var ok = !faults.failRestore
+        guard ok else { return false }
         for snapshot in snapshots.reversed() {
             switch snapshot {
             case .keychain(let service, let account, let before?):
-                _ = await keychain.write(service: service, account: account, value: before)
+                ok = await keychain.write(service: service, account: account, value: before) == .written && ok
             case .keychain(let service, let account, nil):
-                _ = await keychain.delete(service: service, account: account)
+                ok = await keychain.delete(service: service, account: account) == .written && ok
             case .file(let url, let before?):
-                _ = writeFileAtomically(before, to: url)
+                ok = writeFileAtomically(before, to: url) && ok
             case .file(let url, nil):
-                try? FileManager.default.removeItem(at: url)
+                ok = ((try? FileManager.default.removeItem(at: url)) != nil || !FileManager.default.fileExists(atPath: url.path)) && ok
             }
         }
+        return ok
     }
 
     // MARK: - Notice

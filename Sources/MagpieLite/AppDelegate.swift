@@ -27,7 +27,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let supportRoot = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appending(path: "MagpieLite", directoryHint: .isDirectory)
         guard let lock = InstanceLock.acquire(supportRoot: supportRoot) else {
-            // Another copy already runs and owns the vault.
+            // Another copy already runs and owns the vault; with none running, the folder itself can't be opened.
+            let copies = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "").count
+            if copies <= 1 {
+                let alert = NSAlert()
+                alert.messageText = "Magpie Lite can't open its folder"
+                alert.informativeText = supportRoot.path
+                alert.runModal()
+            }
             NSApp.terminate(nil)
             return
         }
@@ -77,7 +84,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         content.sizingOptions = [.preferredContentSize]
         statusItem.attach(popover: content, screen: screen, onOpen: { Task { await poller.rereadLive() } }) { [weak self] in self?.openManager() }
         self.statusItem = statusItem
-        poller.start()
+        Task {
+            await switcher.settleInterruptedSwitch()
+            poller.start()
+        }
     }
 
     private func openManager() {

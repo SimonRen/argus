@@ -84,7 +84,9 @@ struct PopoverView: View {
     @ViewBuilder
     private func notices(_ t: Theme, cards: [ToolCard]) -> some View {
         if let notice = commands.notice {
-            NoticeView(theme: t, icon: "checkmark", tint: t.liveText, background: t.notice, text: notice, onDismiss: commands.dismissNotice) {
+            let problem = commands.noticeIsProblem
+            NoticeView(theme: t, icon: problem ? "exclamationmark.triangle" : "checkmark", tint: problem ? t.warnText : t.liveText,
+                       background: problem ? t.warnBg : t.notice, text: notice, onDismiss: commands.dismissNotice) {
                 if commands.offersRestart {
                     PillButton(title: "Restart app-server", fill: t.ok) { Task { await commands.restartCodexDaemon() } }
                 }

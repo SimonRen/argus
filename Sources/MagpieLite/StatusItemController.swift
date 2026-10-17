@@ -3,11 +3,14 @@ import MagpieLiteCore
 import Observation
 
 /// Owns the status item and redraws it whenever the summary, a Show-in-menubar choice or the menubar's appearance changes.
-@MainActor final class StatusItemController: NSObject {
+@MainActor final class StatusItemController: NSObject, NSPopoverDelegate {
     let item: NSStatusItem
     private let state: AppState
     private let preferences: MenuBarPreferences
     private var appearanceObservation: NSKeyValueObservation?
+    private var activation: NSObjectProtocol?
+    /// Clicks in other apps while the popover is shown.
+    private var outsideClicks: Any?
     private var popover: NSPopover?
     private var screen: PopoverScreen?
     private var openManager: () -> Void = {}
@@ -33,8 +36,17 @@ import Observation
     func attach(popover content: NSViewController, screen: PopoverScreen, onOpen: @escaping () -> Void, openManager: @escaping () -> Void) {
         let popover = NSPopover()
         popover.behavior = .transient
+        popover.animates = false
         popover.contentViewController = content
+        popover.delegate = self
         self.popover = popover
+        // Activation can land after the popover is shown; it takes key then, or it keeps the inactive look.
+        activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let popover = self?.popover, popover.isShown else { return }
+                popover.contentViewController?.view.window?.makeKey()
+            }
+        }
         self.screen = screen
         self.onOpen = onOpen
         self.openManager = openManager
@@ -59,9 +71,20 @@ import Observation
         NSApp.activate(ignoringOtherApps: true)
         onOpen()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+        // A transient popover closes on outside clicks only while the app is active; activation can be refused,
+        // so a click in any other app closes it too (mouse events need no permission).
+        outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.closePopover() }
+        }
     }
 
     func closePopover() { popover?.performClose(nil) }
+
+    func popoverDidClose(_ notification: Notification) {
+        if let outsideClicks { NSEvent.removeMonitor(outsideClicks) }
+        outsideClicks = nil
+    }
 
     /// Draws the current summary and re-arms observation of everything it read.
     private func render() {

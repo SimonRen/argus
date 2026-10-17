@@ -11,18 +11,22 @@ public struct ClaudeTool: ToolAdapter {
         self.env = env
     }
 
+    /// The user name as is, as Claude Code reads it; `claude-code-user` only when there is none.
     var keychainAccount: String {
-        env.user.wholeMatch(of: /[a-zA-Z0-9._-]+/) != nil ? env.user : "claude-code-user"
+        env.user.isEmpty ? "claude-code-user" : env.user
     }
 
-    /// `.claude/.config.json` when it is a regular file with content, else `.claude.json`.
+    /// `.claude/.config.json` when it is a regular file with content, or an empty writable one while `.claude.json`
+    /// is absent; else `.claude.json`.
     var configURL: URL {
+        let fm = FileManager.default
         let alternate = env.home.appending(path: ".claude/.config.json")
-        let attrs = try? FileManager.default.attributesOfItem(atPath: alternate.resolvingSymlinksInPath().path)
-        if attrs?[.type] as? FileAttributeType == .typeRegular, (attrs?[.size] as? NSNumber)?.intValue ?? 0 > 0 {
-            return alternate
-        }
-        return env.home.appending(path: ".claude.json")
+        let primary = env.home.appending(path: ".claude.json")
+        let path = alternate.resolvingSymlinksInPath().path
+        let attrs = try? fm.attributesOfItem(atPath: path)
+        guard attrs?[.type] as? FileAttributeType == .typeRegular else { return primary }
+        if (attrs?[.size] as? NSNumber)?.intValue ?? 0 > 0 { return alternate }
+        return fm.isWritableFile(atPath: path) && !fm.fileExists(atPath: primary.path) ? alternate : primary
     }
 
     /// The config's `oauthAccount`: parsed value and exact bytes.

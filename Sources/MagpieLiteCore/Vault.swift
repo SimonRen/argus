@@ -56,7 +56,12 @@ public enum VaultEntry: Sendable, Equatable {
 /// Never carries a credential value.
 public struct VaultError: Error, Equatable, CustomStringConvertible {
     public let reason: String
-    public init(_ reason: String) { self.reason = reason }
+    /// The label of the other account already saved with these exact tokens.
+    public var sharedWith: String?
+    public init(_ reason: String, sharedWith: String? = nil) {
+        self.reason = reason
+        self.sharedWith = sharedWith
+    }
     public var description: String { reason }
 }
 
@@ -87,7 +92,7 @@ public actor Vault {
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         var url = vaultURL
-        try url.setResourceValues(values)
+        try? url.setResourceValues(values)   // best effort: some volumes refuse it, and the vault must still open
         for tool in Tool.allCases {
             let dir = vaultURL.appending(path: tool.rawValue, directoryHint: .isDirectory)
             try Self.makeOwnerOnlyFolder(dir)
@@ -121,6 +126,16 @@ public actor Vault {
         guard login.identity.isComplete || allowIncomplete else { throw VaultError("incomplete identity") }
         let tool = login.identity.tool
         let id = login.identity.fileID
+        // A refresh token is one account's: the same one under another account means the tool's login and its account
+        // record disagree (a switch cut short, a config copied from elsewhere), and saving would file one account's tokens
+        // under the other.
+        if let refresh = tokenSet(tool, bytes: login.bytes)?.refreshToken,
+           case .valid(let other)? = entries(tool).first(where: { entry in
+               guard case .valid(let e) = entry, e.identity.fileID != id, let bytes = e.payloadBytes else { return false }
+               return tokenSet(tool, bytes: bytes)?.refreshToken == refresh
+           }) {
+            throw VaultError("this login's tokens are already saved for \(other.label), so its account record looks wrong", sharedWith: other.label)
+        }
         let existing = try existingEnvelope(tool, id)
         let envelope = VaultEnvelope(
             v: 1, tool: tool, identity: login.identity, identityKey: login.identity.key, label: login.label, plan: login.plan,

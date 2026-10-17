@@ -67,6 +67,7 @@ import MagpieLiteCore
             let cmds = commands(rig)
             #expect(await cmds.save(.claude) == .refused(reason))
             #expect(cmds.notice == reason)
+            #expect(cmds.noticeIsProblem)
             #expect(await rig.vault.entries(.claude).isEmpty)
         }
     }
@@ -84,12 +85,14 @@ import MagpieLiteCore
         let outcome = await cmds.switchTo(AccountKey(tool: .codex, id: target.identity.fileID))
         #expect(outcome == .switched(notice: "Codex now signs in as b@example.com.", daemonRunning: false))
         #expect(cmds.notice == "Codex now signs in as b@example.com.")
-        #expect(rig.state.lastLiveFetch != nil)
+        #expect(rig.tools[.codex]!.reads >= 2)   // read again, then refreshed
         #expect(rig.state.entries[.codex]?.count == 2)
         cmds.dismissNotice()
         #expect(cmds.notice == nil)
+        #expect(!cmds.noticeIsProblem)
         #expect(await cmds.switchTo(AccountKey(tool: .codex, id: "gone")) == .refused("That saved account is gone."))
         #expect(cmds.notice == "That saved account is gone.")
+        #expect(cmds.noticeIsProblem)
     }
 
     @Test func `REQ/F03-AC-3.c14 a Codex switch with the app-server running restarts it at once and says how it went`() async throws {
@@ -115,7 +118,7 @@ import MagpieLiteCore
             #expect(await switching.value == .switched(notice: lead, daemonRunning: true))
             if let failure {
                 #expect(cmds.notice == lead + " The Codex app-server didn't restart (\(failure)), so it still uses the previous account.")
-                #expect(cmds.offersRestart)
+                #expect(cmds.offersRestart && cmds.noticeIsProblem)
             } else {
                 #expect(cmds.notice == lead + " Restarted the Codex app-server; open sessions reconnect on their own.")
                 #expect(!cmds.offersRestart)

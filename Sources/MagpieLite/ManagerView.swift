@@ -50,7 +50,7 @@ struct ManagerView: View {
     let loginItem: LoginItemController
 
     @State private var selected: Tool = .claude
-    @State private var saveBanner: [Tool: String] = [:]
+    @State private var saveBanner: [Tool: (text: String, problem: Bool)] = [:]
     @State private var tableWidth: CGFloat = 780
     @Environment(\.colorScheme) private var scheme
 
@@ -184,7 +184,8 @@ struct ManagerView: View {
                         Task {
                             let result = await commands.save(tool)
                             commands.dismissNotice()
-                            saveBanner[tool] = ManagerText.saveBanner(result)
+                            let problem = if case .refused = result { true } else { false }
+                            saveBanner[tool] = (ManagerText.saveBanner(result), problem)
                         }
                     } label: {
                         Text("Save current login").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
@@ -193,9 +194,24 @@ struct ManagerView: View {
                     .buttonStyle(.plain)
                 }
                 if let banner = saveBanner[selected] {
-                    Text(banner).font(.system(size: 12, weight: .semibold)).foregroundStyle(t.flashText)
+                    Text(banner.text).font(.system(size: 12, weight: .semibold)).foregroundStyle(banner.problem ? t.warnText : t.flashText)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(t.flashBg, in: RoundedRectangle(cornerRadius: 9))
+                        .background(banner.problem ? t.warnBg : t.flashBg, in: RoundedRectangle(cornerRadius: 9))
+                }
+                if let notice = commands.notice {
+                    HStack(alignment: .center, spacing: 10) {
+                        Text(notice).font(.system(size: 12, weight: .semibold)).foregroundStyle(commands.noticeIsProblem ? t.warnText : t.flashText)
+                            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                        if commands.offersRestart {
+                            PillButton(title: "Restart app-server", fill: t.ok) { Task { await commands.restartCodexDaemon() } }
+                        }
+                        Button(action: commands.dismissNotice) {
+                            Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(HoverStyle()).foregroundStyle(t.sub).accessibilityLabel("Dismiss")
+                    }
+                    .padding(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 6))
+                    .background(commands.noticeIsProblem ? t.warnBg : t.flashBg, in: RoundedRectangle(cornerRadius: 9))
                 }
                 if let undo = commands.undoBanner {
                     HStack(spacing: 10) {

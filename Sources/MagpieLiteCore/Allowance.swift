@@ -273,13 +273,15 @@ public actor AllowanceFetcher {
             let value = headers.first { $0.key.lowercased() == "retry-after" }?.value
             return .rateLimited(retryAfter: value.flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }.map(TimeInterval.init))
         case .response(let status, _, let body):
-            return .failed("HTTP \(status): \(String(decoding: body.prefix(200), as: UTF8.self))")
+            // Only the vendor's own message, never raw body bytes, which could echo a header or token.
+            let object = jsonObject(body)
+            let message = ((object?["error"] as? [String: Any])?["message"] as? String) ?? (object?["message"] as? String) ?? (object?["error"] as? String)
+            return .failed(message.map { "HTTP \(status): \($0.prefix(160))" } ?? "HTTP \(status)")
         }
     }
 }
 
 public enum RateLimitPolicy {
-    /// `retryAfter` when given; else 300 s for a first 429, the previous delay × 1.5 for a repeat, capped at 1800 s.
     /// The wait after an account's `strike`-th consecutive 429, as measured on Claude's usage endpoint
     /// (refs/claude-swap usage_store.py): a Retry-After over 600 s gets a 900 s margin, since blocks often re-arm just
     /// after their deadline, capped at 4500 s; a shorter one is honoured, or the growth curve if longer; none (or 0)

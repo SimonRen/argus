@@ -305,6 +305,19 @@ Candidate scope: create `Sources/MagpieLite/LaunchAtLogin.swift`
 - 2026-10-17 — Opening the popover re-reads every tool's live login (local reads only, no allowance request), so a fresh sign-in shows at once; Codex and agy sync back there too (FR-04.24).
 - 2026-10-17 — **Codex app-server restart (owner-approved)**: a Codex switch restarts a running managed app-server at once instead of offering it; the restart command is allowed 375 s, since killing it mid-drain leaves no app-server (FR-03.14, §4).
 - 2026-10-17 — Popover buttons show a hover highlight, a pressed state and the pointing-hand cursor.
+- 2026-10-17 — The popover opens and closes at once, without the fade.
+- 2026-10-17 — The popover takes key once the app is active and closes on a click in any other app, so it never stays in the inactive look or open after an outside click.
+- 2026-10-17 — **Hardening pass (owner-approved)**:
+  - A Claude switch journals its target and before-digests (no secrets) ahead of the first live write, and removes the journal once verified or rolled back. A switch cut short, or a rollback that fails, is settled at launch or at the next switch by giving the config the account the Keychain already holds, so the two never disagree (§4, FR-03.10).
+  - Rollback reports failure instead of claiming the previous login is still in use.
+  - The vault refuses to save a login whose refresh token another saved account already holds. Renewal skips a saved account whose token the tool is running on, and keeps a renewed login the vault couldn't take, saving it before any new grant (FR-04.7, FR-04.8).
+  - Keychain reads decode the hex `security -w` prints for values with non-ASCII bytes or newlines. `security -i` arguments are quoted whenever they hold anything but plain characters. The Claude Keychain account is the login name as is, as Claude Code reads it (FR-01.4, FR-03.16).
+  - Codex and agy live files are written through symlinks, a missing Codex folder is created, and Claude's config lock is taken on the real path. `.claude/.config.json` is also chosen when empty and writable with no `.claude.json` (FR-01.1, FR-03.8, FR-03.9).
+  - Codex `auto` mode checks the `Codex Auth` item's existence without reading it, so there is no access prompt. Only a table header ends the top level of `config.toml`, and an unreadable `config.toml` reads as unknown (FR-01.7).
+  - Needs sign-in survives a restart until the saved login changes. `readings.json` is written 0600. "Live updated" counts only a live reading that arrived (FR-04.6, FR-04.22).
+  - Switch, refusal and failure notices show at once (the live refresh follows), problems are styled as problems, and the manager shows the switch notice with Restart. Only the latest app-server restart reports.
+  - An error detail carries the vendor's message field only, never raw body bytes (FR-04.14).
+  - A UTF-8 byte-order mark in `~/.claude.json` is skipped by the splice. Excluding the vault from backups is best effort. A support folder that can't be opened is reported instead of quitting silently.
 
 ## Open questions
 Mirrors `frontier.md`: none — every branch is terminal; no deferred or fog rows.

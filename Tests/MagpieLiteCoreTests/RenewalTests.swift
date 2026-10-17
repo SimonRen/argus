@@ -125,6 +125,32 @@ fileprivate func agyInner(_ envelope: VaultEnvelope?) -> [String: Any]? {
         #expect(rig.tokenRequests.count == 1)
     }
 
+    @Test func `a saved login whose tokens the tool is running on, under another account's name, is not renewed`() async throws {
+        let rig = try PollerRig(renewing: true) { _ in claudeTokenOK("x") }
+        let renewer = try #require(rig.renewer)
+        let b = testLogin(.claude, "b", expiry: soon)
+        let key = try await rig.save(b)
+        let other = testLogin(.claude, "z")
+        rig.tools[.claude]!.script([.signedIn(LiveLogin(identity: other.identity, plan: nil, label: other.label, bytes: b.bytes, tokens: b.tokens,
+                                                        clientID: nil, claudeAccount: other.claudeAccount, accountID: nil))])
+        #expect(await renewer.renew(key, trigger: .nearExpiry(accessToken: "test-access-b"), vault: rig.vault) == .skipped("token is live"))
+        #expect(rig.tokenRequests.isEmpty)
+    }
+
+    @Test func `a renewed login the vault couldn't take is saved before any new grant, never re-spending the old token`() async throws {
+        let rig = try PollerRig(renewing: true) { _ in claudeTokenOK("x") }
+        let renewer = try #require(rig.renewer)
+        let key = try await rig.save(testLogin(.claude, "b", expiry: soon))
+        let folder = rig.box.supportRoot.appending(path: "vault/claude")
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        #expect(await renewer.renew(key, trigger: .nearExpiry(accessToken: "test-access-b"), vault: rig.vault) == .transient("couldn't save the renewed login"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        #expect(await renewer.renew(key, trigger: .nearExpiry(accessToken: "test-access-b"), vault: rig.vault) == .renewed)
+        #expect(rig.tokenRequests.count == 1)
+        let saved = await payload(rig, key)
+        #expect((json(saved?.payloadBytes)?["claudeAiOauth"] as? [String: Any])?["accessToken"] as? String == "test-access-x")
+    }
+
     @Test func `REQ/F04-AC-4.c7 the live account is never renewed`() async throws {
         let live = testLogin(.claude, "a", expiry: Date(timeIntervalSince1970: 1_790_000_000 + 400))   // inside the 5 min window at 180 s
         let rig = try PollerRig(live: [.claude: [.signedIn(live)]], renewing: true) { request in

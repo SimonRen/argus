@@ -29,7 +29,8 @@ struct ClaudeLocks {
         locks = [
             (home.appending(path: ".claude/.oauth_refresh.lock"), timing.refreshStale),
             (home.appending(path: ".claude.lock"), timing.refreshStale),
-            (URL(fileURLWithPath: configURL.path + ".lock"), timing.configStale),
+            // Claude Code locks the config's real path.
+            (URL(fileURLWithPath: configURL.resolvingSymlinksInPath().path + ".lock"), timing.configStale),
         ]
         self.timing = timing
         self.now = now

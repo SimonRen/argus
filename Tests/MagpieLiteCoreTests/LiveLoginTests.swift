@@ -72,13 +72,27 @@ fileprivate final class ConfigChangingSecurity: SecurityRunning, @unchecked Send
         #expect(login.identity.email == "other@example.com")
     }
 
-    @Test func `REQ/F01-AC-1.c1 Claude uses claude-code-user as the Keychain account for an unusual login name`() async throws {
-        let box = try TestSandbox()
-        var env = box.env
-        env.user = "name with space"
-        try box.write("home/.claude.json", claudeConfig(aliceAccount))
-        #expect(await box.keychain.write(service: claudeService, account: "claude-code-user", value: utf8(claudeItem)) == .written)
-        guard case .signedIn = await ClaudeTool(env: env).readLive() else { Issue.record("not signed in"); return }
+    @Test func `REQ/F01-AC-1.c1 Claude reads the Keychain under the login name as is, claude-code-user only when there is none`() async throws {
+        for (user, account) in [("name with space", "name with space"), ("o'neil", "o'neil"), ("", "claude-code-user")] {
+            let box = try TestSandbox()
+            var env = box.env
+            env.user = user
+            try box.write("home/.claude.json", claudeConfig(aliceAccount))
+            #expect(await box.keychain.write(service: claudeService, account: account, value: utf8(claudeItem)) == .written)
+            guard case .signedIn = await ClaudeTool(env: env).readLive() else { Issue.record("\(user.debugDescription) not signed in"); continue }
+        }
+    }
+
+    @Test func `Claude takes an empty writable .claude config.json only while .claude.json is absent`() async throws {
+        for primaryPresent in [false, true] {
+            let box = try TestSandbox()
+            try box.write("home/.claude/.config.json", "")
+            if primaryPresent { try box.write("home/.claude.json", claudeConfig(aliceAccount)) }
+            #expect(await box.keychain.write(service: claudeService, account: "tester", value: utf8(claudeItem)) == .written)
+            let state = await ClaudeTool(env: box.env).readLive()
+            let email: String? = if case .signedIn(let login) = state { login.identity.email } else { nil }
+            #expect((email != nil) == primaryPresent, "\(state)")
+        }
     }
 
     @Test func `REQ/F01-AC-1.c6 a Claude item with empty access and refresh tokens shows signed out`() async throws {
@@ -206,6 +220,17 @@ fileprivate final class ConfigChangingSecurity: SecurityRunning, @unchecked Send
         try box.write("codex/auth.json", codexAuth(email: "bob@example.com", accountID: "acct-1"))
         guard case .signedIn = await CodexTool(env: box.env).readLive() else { Issue.record("not signed in"); return }
         #expect(box.violations.isEmpty)
+    }
+
+    @Test func `Codex store mode after a multi-line array is still read, and an unreadable config is unknown`() async throws {
+        let box = try TestSandbox()
+        try box.write("codex/config.toml", "notify = [\n  [\"a\", \"b\"],\n  \"c\",\n]\ncli_auth_credentials_store = \"keyring\"\n")
+        try box.write("codex/auth.json", codexAuth(email: "bob@example.com", accountID: "acct-1"))
+        guard case .unsupported = await CodexTool(env: box.env).readLive() else { Issue.record("keyring mode missed"); return }
+        let config = box.codexHome.appending(path: "config.toml")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: config.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: config.path) }
+        guard case .unknown = await CodexTool(env: box.env).readLive() else { Issue.record("unreadable config not unknown"); return }
     }
 
     @Test func `Codex store mode under a table header is ignored`() async throws {

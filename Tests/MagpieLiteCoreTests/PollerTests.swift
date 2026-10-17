@@ -121,6 +121,29 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(rig.stub.requests.count == 1)
     }
 
+    @Test func `needs sign-in survives a restart until the saved login changes, and the readings file is owner-only`() async throws {
+        let b = testLogin(.claude, "b", expiry: Date(timeIntervalSince1970: 1_790_000_000 + 120))
+        let rig = try PollerRig(renewing: true, persistReadings: true) { request in
+            isTokenRequest(request) ? .json(400, #"{"error":"invalid_grant"}"#) : okReply(request)
+        }
+        let key = try await rig.save(b)
+        await rig.poller.runBatch()
+        #expect(rig.state.status[key]?.flag == .needsSignIn)
+        let file = rig.box.supportRoot.appending(path: "readings.json")
+        #expect((try FileManager.default.attributesOfItem(atPath: file.path))[.posixPermissions] as? Int == 0o600)
+        func restart() async -> AppState {
+            let state = AppState(defaults: UserDefaults(suiteName: UUID().uuidString)!, now: rig.clock.closure)
+            let poller = Poller(state: state, tools: [], vault: rig.vault, fetcher: AllowanceFetcher(http: HTTPClient(session: rig.stub.session), version: "0", now: rig.clock.closure),
+                                sleeper: RecordingSleeper(), now: rig.clock.closure, readingsFile: file)
+            await poller.reloadVault()
+            return state
+        }
+        #expect(await restart().status[key]?.flag == .needsSignIn)
+        try await rig.save(testLogin(.claude, "b"))   // signed in again: new bytes
+        #expect(await restart().status[key]?.flag == .ok)
+    }
+
+    // MARK: F04-AC-4.c6
     // MARK: F04-AC-4.c6
 
     @Test func `REQ/F04-AC-4.c6 a failed fetch keeps the last good reading, marked stale with its age`() async throws {
@@ -130,7 +153,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
         await rig.poller.runBatch()
         let good = try #require(rig.state.status[testKey(a)]?.reading)
         #expect(good.fetchedAt == rig.clock.now)
-        for expected in ["HTTP 503: busy", "network error", "unexpected response"] {
+        for expected in ["HTTP 503", "network error", "unexpected response"] {
             rig.clock.advance(300)
             await rig.poller.runBatch()
             let status = try #require(rig.state.status[testKey(a)])
@@ -188,7 +211,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(await rig.poller.refreshLive() == RefreshDeferral(until: start + 180, rateLimitedBy: nil))
         #expect(await rig.poller.refresh(testKey(a)) == RefreshDeferral(until: start + 180, rateLimitedBy: nil))
         #expect(rig.tags == ["a"])
-        #expect(rig.state.lastLiveFetch == start)
+        #expect(rig.state.lastLiveFetch == nil)   // a failed fetch doesn't count as updated
         rig.clock.advance(150)
         #expect(await rig.poller.refreshLive() != nil)
         await rig.poller.runBatch()

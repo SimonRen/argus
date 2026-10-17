@@ -129,6 +129,24 @@ import MagpieLiteCore
         #expect(box.violations.isEmpty)
     }
 
+    @Test func `non-ASCII and newline values, which security -w prints as hex, and odd account names read back exactly`() async throws {
+        let box = try TestSandbox()
+        let values = [utf8(#"{"mcpOAuth":{"srv":{"name":"café ☕"}}}"#), utf8("{\"a\":\n1}"), Data([0x7F, 0x09, 0x41])]
+        for (i, value) in values.enumerated() {
+            // macOS short names are ASCII; argv and `security -i` normalise non-ASCII differently.
+            for account in ["tester", "o'connor x\ty"] {
+                #expect(await box.keychain.write(service: "svc\(i)", account: account, value: value) == .written)
+                #expect(await box.keychain.read(service: "svc\(i)", account: account) == .found(value))
+            }
+        }
+        #expect(await box.keychain.exists(service: "svc0", account: "tester") == true)
+        #expect(await box.keychain.exists(service: "svc0", account: "nobody") == false)
+        // Printable ASCII that happens to look like hex decodes to bytes that are not UTF-8 text, so stays as is.
+        #expect(await box.keychain.write(service: "hexlike", account: "tester", value: utf8("deadbeef")) == .written)
+        #expect(await box.keychain.read(service: "hexlike", account: "tester") == .found(utf8("deadbeef")))
+        #expect(box.violations.isEmpty)
+    }
+
     @Test func `REQ/F03-AC-3.c16 a command line over 4032 bytes goes in argv and reads back exactly`() async throws {
         let box = try TestSandbox()
         let value = utf8("{\"blob\":\"" + String(repeating: "y", count: 4985) + "\"}")
