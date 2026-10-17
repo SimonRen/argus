@@ -44,6 +44,17 @@ fileprivate func entry(_ rig: PollerRig, _ key: AccountKey) async -> VaultEnvelo
         #expect(await entry(rig, agyKey)?.payloadBytes == agy.bytes)
     }
 
+    @Test func `opening the popover re-reads live logins and syncs back Codex and agy without a request`() async throws {
+        let codex = refreshed(.codex, "e", "r1"), fresh = testLogin(.claude, "n")
+        let rig = try PollerRig(live: [.claude: [.signedIn(fresh)], .codex: [.signedIn(codex)]])
+        let codexKey = try await rig.save(testLogin(.codex, "e"))
+        await rig.poller.reloadVault()
+        await rig.poller.rereadLive()
+        #expect(rig.state.live[.claude] == .signedIn(fresh))
+        #expect(await entry(rig, codexKey)?.payloadBytes == codex.bytes)
+        #expect(rig.tags.isEmpty)
+    }
+
     @Test func `REQ/F04-AC-4.c24 nothing is written when the in-section read no longer matches or the entry is unreadable`() async throws {
         let first = refreshed(.codex, "e", "r1")
         let rig = try PollerRig(live: [.codex: [.signedIn(first), .signedIn(testLogin(.codex, "x"))]])

@@ -11,6 +11,7 @@ import Observation
     private var popover: NSPopover?
     private var screen: PopoverScreen?
     private var openManager: () -> Void = {}
+    private var onOpen: () -> Void = {}
 
     init(state: AppState, preferences: MenuBarPreferences) {
         self.state = state
@@ -28,13 +29,14 @@ import Observation
         render()
     }
 
-    /// One transient popover hosting `content`; with no status item window, clicks open the manager instead.
-    func attach(popover content: NSViewController, screen: PopoverScreen, openManager: @escaping () -> Void) {
+    /// One transient popover hosting `content`, calling `onOpen` as it opens; with no status item window, clicks open the manager instead.
+    func attach(popover content: NSViewController, screen: PopoverScreen, onOpen: @escaping () -> Void, openManager: @escaping () -> Void) {
         let popover = NSPopover()
         popover.behavior = .transient
         popover.contentViewController = content
         self.popover = popover
         self.screen = screen
+        self.onOpen = onOpen
         self.openManager = openManager
     }
 
@@ -55,6 +57,7 @@ import Observation
         // known-ceiling: `activate(ignoringOtherApps:)` is marked to-be-deprecated → when it warns, find the replacement.
         if let frame = (button.window?.screen ?? NSScreen.main)?.visibleFrame { screen?.visibleHeight = frame.height }
         NSApp.activate(ignoringOtherApps: true)
+        onOpen()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 

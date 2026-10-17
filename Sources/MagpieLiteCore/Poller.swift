@@ -159,6 +159,16 @@ public struct TaskSleeper: Sleeper {
         return sent ? nil : deferrals.min { $0.until < $1.until }
     }
 
+    /// Each tool's live login read again, Codex and agy synced back; no network request (the popover opening).
+    public func rereadLive() async {
+        for tool in Tool.allCases {
+            guard let adapter = tools[tool] else { continue }
+            let live = await adapter.readLive()
+            state.live[tool] = live
+            if tool != .claude, case .signedIn(let login) = live { await syncBack(tool, seen: login, baseline: nil) }
+        }
+    }
+
     /// That account only; a live account reads its live login. -> why nothing was sent, if so.
     @discardableResult
     public func refresh(_ key: AccountKey) async -> RefreshDeferral? {
