@@ -6,7 +6,6 @@ import SwiftUI
 struct PopoverView: View {
     let state: AppState
     let commands: AccountCommands
-    let poller: Poller
     let openManager: () -> Void
 
     /// Tools whose other accounts are listed; kept until the app quits.
@@ -23,7 +22,7 @@ struct PopoverView: View {
 
     private func content(_ t: Theme, now: Date) -> some View {
         let cards = Tool.allCases.map { tool in
-            ToolCard.build(state.snapshot(tool), expanded: expanded.contains(tool), dismissedUnsavedKey: commands.dismissedUnsaved[tool], now: now)
+            ToolCard.build(state.snapshot(tool).hidingMinorGroups, expanded: expanded.contains(tool), dismissedUnsavedKey: commands.dismissedUnsaved[tool], now: now)
         }
         return VStack(spacing: 0) {
             header(t, now: now)
@@ -46,12 +45,17 @@ struct PopoverView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Allowance").font(.system(size: 15, weight: .semibold))
-                Text(PopoverText.subtitle(lastLiveFetch: state.lastLiveFetch, intervalMinutes: state.intervalMinutes, now: now))
-                    .font(.system(size: 11.5)).foregroundStyle(t.sub)
+                Text(commands.hint ?? PopoverText.subtitle(lastLiveFetch: state.lastLiveFetch, intervalMinutes: state.intervalMinutes, now: now))
+                    .font(.system(size: 11.5)).foregroundStyle(commands.hint == nil ? t.sub : t.warnText)
+                    .lineLimit(1).minimumScaleFactor(0.85).animation(.easeInOut(duration: 0.2), value: commands.hint)
             }
             Spacer()
             HStack(spacing: 6) {
-                SquareButton(symbol: "arrow.clockwise", help: "Refresh live accounts", theme: t) { Task { await poller.refreshLive() } }
+                RefreshButton(action: { await commands.refreshLive() }) { angle in
+                    Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold)).foregroundStyle(t.text).rotationEffect(angle)
+                        .frame(width: 30, height: 30).background(t.btn, in: RoundedRectangle(cornerRadius: 9))
+                }
+                .buttonStyle(.plain).help("Refresh live accounts").accessibilityLabel("Refresh live accounts")
                 SquareButton(symbol: "macwindow", help: "Open manager window", theme: t, action: openManager)
             }
         }
@@ -65,13 +69,6 @@ struct PopoverView: View {
                 if commands.offersRestart {
                     PillButton(title: "Restart app-server", fill: t.ok) { Task { await commands.restartCodexDaemon() } }
                 }
-            }
-        }
-        ForEach(Tool.allCases, id: \.self) { tool in
-            if let until = state.rateLimitedUntil[tool], until > Date() {
-                let newest = state.snapshot(tool).accounts.compactMap { $0.reading?.fetchedAt }.max()
-                NoticeView(theme: t, icon: "clock", tint: t.warnText, background: t.warnBg,
-                           text: PopoverText.rateLimitNotice(tool, until: until, newestReading: newest, timeZone: .current), onDismiss: nil) { EmptyView() }
             }
         }
         ForEach(cards.filter { $0.unsavedBanner != nil }, id: \.tool) { card in
@@ -99,7 +96,7 @@ struct PopoverView: View {
         CardView.Actions(
             toggle: { if expanded.contains(tool) { expanded.remove(tool) } else { expanded.insert(tool) } },
             switchTo: { key in Task { await commands.switchTo(key) } },
-            refresh: { key in Task { await poller.refresh(key) } })
+            refresh: { key in await commands.refresh(key) })
     }
 }
 
@@ -114,7 +111,7 @@ struct CardView: View {
     struct Actions {
         let toggle: () -> Void
         let switchTo: (AccountKey) -> Void
-        let refresh: (AccountKey) -> Void
+        let refresh: @MainActor (AccountKey) async -> Void
     }
 
     let card: ToolCard
@@ -187,8 +184,8 @@ struct RowView: View {
                     PillButton(title: "Switch", fill: t.btn, foreground: t.text, disabled: row.switchDisabledReason != nil) { actions.switchTo(row.id) }
                         .help(row.switchDisabledReason ?? "Switch \(tool.displayName) to \(row.email)")
                 }
-                Button { actions.refresh(row.id) } label: {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .bold)).frame(width: 22, height: 22)
+                RefreshButton(action: { await actions.refresh(row.id) }) { angle in
+                    Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .bold)).rotationEffect(angle).frame(width: 22, height: 22)
                 }
                 .buttonStyle(.plain).foregroundStyle(t.sub).disabled(!row.refreshEnabled).opacity(row.refreshEnabled ? 1 : 0.4)
                 .help("Refresh this account").accessibilityLabel("Refresh \(tool.displayName) \(row.email)")
@@ -197,7 +194,6 @@ struct RowView: View {
             VStack(spacing: 6) {
                 ForEach(Array(row.groups.enumerated()), id: \.offset) { GroupView(group: $0.element, theme: t) }
             }
-            .opacity(row.dimmed ? 0.7 : 1)
             if let suggestion {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle").font(.system(size: 11, weight: .semibold))
@@ -341,6 +337,35 @@ struct SquareButton: View {
                 .frame(width: 30, height: 30).background(theme.btn, in: RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain).help(help).accessibilityLabel(help)
+    }
+}
+
+/// Its arrow turns clockwise while `action` runs: at least one full turn, always coming to rest upright.
+struct RefreshButton<Content: View>: View {
+    let action: @MainActor () async -> Void
+    @ViewBuilder let content: (Angle) -> Content
+    @State private var turns = 0.0
+    @State private var running = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button {
+            guard !running else { return }
+            running = true
+            Task {
+                await action()
+                running = false
+            }
+            guard !reduceMotion else { return }
+            Task {
+                repeat {
+                    withAnimation(.linear(duration: 0.8)) { turns += 1 }
+                    try? await Task.sleep(for: .milliseconds(800))
+                } while running
+            }
+        } label: {
+            content(.degrees(turns * 360))
+        }
     }
 }
 

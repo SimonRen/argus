@@ -60,6 +60,24 @@ public struct ToolSnapshot: Sendable, Equatable {
     }
 }
 
+extension ToolSnapshot {
+    /// The popover's and the menubar's view: agy's "Claude and GPT models" group (a small weekly allowance) is left out;
+    /// the manager shows every group.
+    public var hidingMinorGroups: ToolSnapshot {
+        guard tool == .agy else { return self }
+        func major(_ group: AllowanceGroup) -> Bool {
+            let name = group.name.lowercased()
+            return !name.contains("claude") && !name.contains("gpt")
+        }
+        let accounts = accounts.map { a in
+            AccountSnapshot(key: a.key, label: a.label, plan: a.plan, isLive: a.isLive, isSaved: a.isSaved, kept: a.kept, flag: a.flag,
+                            reading: a.reading.map { AllowanceReading(groups: $0.groups.filter(major), plan: $0.plan, fetchedAt: $0.fetchedAt) },
+                            stale: a.stale)
+        }
+        return ToolSnapshot(tool: tool, live: live, accounts: accounts, rateLimitedUntil: rateLimitedUntil)
+    }
+}
+
 @MainActor @Observable public final class AppState {
     static let intervalKey = "intervalMinutes"
     static let intervals = [3, 5, 10]

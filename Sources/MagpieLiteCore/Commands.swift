@@ -27,6 +27,9 @@ public enum SaveResult: Sendable, Equatable {
     public private(set) var notice: String?
     /// The notice offers Restart for a running Codex app-server.
     public private(set) var offersRestart = false
+    /// A short-lived hint, e.g. after a refresh that came too soon; it clears itself.
+    public private(set) var hint: String?
+    @ObservationIgnored private var hintTimer: Task<Void, Never>?
     /// Tool → the live identity key "Later" was pressed for.
     public private(set) var dismissedUnsaved: [Tool: String] = [:]
     /// The last removed entry's raw bytes, held only while Undo is possible.
@@ -73,6 +76,26 @@ public enum SaveResult: Sendable, Equatable {
         case .noOp: break
         }
         return outcome
+    }
+
+    /// "Refresh live accounts"; a refresh that sends nothing says why for a few seconds.
+    public func refreshLive() async {
+        if let deferral = await poller.refreshLive() { flash(deferral) }
+    }
+
+    /// An account row's refresh.
+    public func refresh(_ key: AccountKey) async {
+        if let deferral = await poller.refresh(key) { flash(deferral) }
+    }
+
+    private func flash(_ deferral: RefreshDeferral) {
+        hint = PopoverText.refreshHint(deferral, now: state.now(), timeZone: .current)
+        hintTimer?.cancel()
+        hintTimer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            self?.hint = nil
+        }
     }
 
     /// Hides the unsaved banner until the tool's live identity changes.

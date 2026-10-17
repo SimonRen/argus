@@ -67,10 +67,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let preferences = MenuBarPreferences(defaults: .standard)
         let loginItem = LoginItemController(service: SMAppServiceLoginItem())
         manager = ManagerWindowController(makeView: {
-            AnyView(ManagerView(state: state, commands: commands, poller: poller, preferences: preferences, loginItem: loginItem))
+            AnyView(ManagerView(state: state, commands: commands, preferences: preferences, loginItem: loginItem))
         }, onClose: { commands.closeUndo() })
         let statusItem = StatusItemController(state: state, preferences: preferences)
-        let view = PopoverView(state: state, commands: commands, poller: poller, openManager: { [weak self] in self?.openManager() })
+        let view = PopoverView(state: state, commands: commands, openManager: { [weak self] in self?.openManager() })
         let content = NSHostingController(rootView: view)
         content.sizingOptions = [.preferredContentSize]
         statusItem.attach(popover: content) { [weak self] in self?.openManager() }

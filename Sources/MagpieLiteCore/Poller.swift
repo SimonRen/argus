@@ -4,6 +4,18 @@ public protocol Sleeper: Sendable {
     func sleep(for duration: Duration) async throws
 }
 
+/// Why an on-demand refresh sent nothing, and when it may send again.
+public struct RefreshDeferral: Sendable, Equatable {
+    public let until: Date
+    /// The vendor whose 429 backoff holds it; nil when the account was fetched under 60 s ago.
+    public let rateLimitedBy: Tool?
+
+    public init(until: Date, rateLimitedBy: Tool?) {
+        self.until = until
+        self.rateLimitedBy = rateLimitedBy
+    }
+}
+
 public struct TaskSleeper: Sleeper {
     public init() {}
     public func sleep(for duration: Duration) async throws { try await Task.sleep(for: duration) }
@@ -26,6 +38,8 @@ public struct TaskSleeper: Sleeper {
     /// Accounts the running batch has yet to fetch, with the callers waiting for that fetch.
     private var queued: [AccountKey: [CheckedContinuation<Void, Never>]] = [:]
     private var lastDelay: [Tool: TimeInterval] = [:]
+    /// When each account's last allowance request was sent.
+    private var lastAttempt: [AccountKey: Date] = [:]
     /// The payload an account had when it was flagged; new bytes clear the flag.
     private var flaggedPayload: [AccountKey: String] = [:]
     /// The previous interval batch's Claude live read (Keychain bytes, `oauthAccount` bytes).
@@ -77,23 +91,34 @@ public struct TaskSleeper: Sleeper {
         batch = nil
     }
 
-    /// Each tool's live login only.
-    public func refreshLive() async {
+    /// Each tool's live login only. -> the earliest deferral when every live account's fetch was deferred.
+    @discardableResult
+    public func refreshLive() async -> RefreshDeferral? {
+        var deferrals: [RefreshDeferral] = [], sent = false
         for tool in Tool.allCases {
             guard let adapter = tools[tool] else { continue }
             let live = await adapter.readLive()
             state.live[tool] = live
             if case .signedIn(let login) = live {
                 let key = AccountKey(tool: tool, id: login.identity.fileID)
+                if let deferral = deferral(key) { deferrals.append(deferral) } else { sent = true }
                 await fetchOnce(key) { await self.fetchLive(key, login) }
                 if tool != .claude { await syncBack(tool, seen: login, baseline: nil) }
             }
         }
-        state.lastLiveFetch = now()
+        if sent || deferrals.isEmpty { state.lastLiveFetch = now() }
+        return sent ? nil : deferrals.min { $0.until < $1.until }
     }
 
-    /// That account only; a live account reads its live login.
-    public func refresh(_ key: AccountKey) async {
+    /// That account only; a live account reads its live login. -> why nothing was sent, if so.
+    @discardableResult
+    public func refresh(_ key: AccountKey) async -> RefreshDeferral? {
+        let deferred = deferral(key)
+        await refreshNow(key)
+        return deferred
+    }
+
+    private func refreshNow(_ key: AccountKey) async {
         if let adapter = tools[key.tool], case .signedIn(let login) = state.live[key.tool], login.identity.fileID == key.id {
             let live = await adapter.readLive()
             state.live[key.tool] = live
@@ -189,6 +214,7 @@ public struct TaskSleeper: Sleeper {
         guard let token = login.tokens.accessToken, (login.tokens.accessTokenExpiry ?? .distantFuture) > now() else {
             return state.update(key) { $0.stale = true }
         }
+        lastAttempt[key] = now()
         apply(await fetcher.fetch(key.tool, accountKey: key.id, accessToken: token, accountID: login.accountID), to: key)
     }
 
@@ -204,6 +230,7 @@ public struct TaskSleeper: Sleeper {
         guard let token = tokens?.accessToken, (tokens?.accessTokenExpiry ?? .distantFuture) > now() else {
             return state.update(key) { $0.stale = true }
         }
+        lastAttempt[key] = now()
         var result = await fetcher.fetch(key.tool, accountKey: key.id, accessToken: token, accountID: envelope.accountID)
         if result == .unauthorized, let renewer {
             guard await renew(key, .unauthorized(accessToken: token), renewer, &envelope, &tokens) else { return }
@@ -243,16 +270,20 @@ public struct TaskSleeper: Sleeper {
         state.update(key) { $0.flag = flag; $0.stale = true }
     }
 
-    /// The vendor is rate limited (the account goes stale), or a Codex reading is under 60 s old.
+    /// The vendor is rate limited (the account goes stale), or the account was fetched under 60 s ago.
     private func skipFetch(_ key: AccountKey) -> Bool {
-        if let until = state.rateLimitedUntil[key.tool], now() < until {
-            state.update(key) { $0.stale = true }
-            return true
-        }
-        if key.tool == .codex, let fetched = state.status[key]?.reading?.fetchedAt, now().timeIntervalSince(fetched) < 60 {
-            return true
-        }
-        return false
+        guard let deferral = deferral(key) else { return false }
+        if deferral.rateLimitedBy != nil { state.update(key) { $0.stale = true } }
+        return true
+    }
+
+    /// Nil when `key` may be fetched now.
+    private func deferral(_ key: AccountKey) -> RefreshDeferral? {
+        let now = now()
+        if let until = state.rateLimitedUntil[key.tool], now < until { return RefreshDeferral(until: until, rateLimitedBy: key.tool) }
+        guard let last = [lastAttempt[key], state.status[key]?.reading?.fetchedAt].compactMap({ $0 }).max(),
+              now.timeIntervalSince(last) < 60 else { return nil }
+        return RefreshDeferral(until: last.addingTimeInterval(60), rateLimitedBy: nil)
     }
 
     // MARK: - Poll-time sync-back

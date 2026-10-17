@@ -4,9 +4,9 @@ import Observation
 public enum Severity: Sendable, Equatable { case normal, low }
 
 public struct MenuBarValue: Sendable, Equatable {
-    /// "62%" or "—".
+    /// The share used, "38%", or "—".
     public let text: String
-    /// Low when the shown integer is under 15; "—" is normal.
+    /// Low when the shown integer is over 85; "—" is normal.
     public let severity: Severity
 
     public init(text: String, severity: Severity) {
@@ -21,8 +21,8 @@ public struct MenuBarValue: Sendable, Equatable {
             self = .missing
             return
         }
-        let shown = Int(remaining.rounded())
-        self.init(text: "\(shown)%", severity: shown < 15 ? .low : .normal)
+        let used = Int((100 - remaining).rounded())
+        self.init(text: "\(used)%", severity: used > 85 ? .low : .normal)
     }
 }
 
@@ -31,19 +31,16 @@ public struct MenuBarSegment: Sendable, Equatable {
     public let letter: String
     public let fiveHour: MenuBarValue
     public let sevenDay: MenuBarValue
-    /// The live account's reading is stale.
-    public let stale: Bool
 
-    public init(tool: Tool, letter: String, fiveHour: MenuBarValue, sevenDay: MenuBarValue, stale: Bool) {
+    public init(tool: Tool, letter: String, fiveHour: MenuBarValue, sevenDay: MenuBarValue) {
         self.tool = tool
         self.letter = letter
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
-        self.stale = stale
     }
 }
 
-/// What the status item shows: per shown tool with a live login, the live account's lowest 5 h and 7 d remaining.
+/// What the status item shows: per shown tool with a live login, the live account's 5 h and 7 d used, the highest across its groups.
 public struct MenuBarSummary: Sendable, Equatable {
     public let segments: [MenuBarSegment]
 
@@ -51,18 +48,18 @@ public struct MenuBarSummary: Sendable, Equatable {
 
     public var accessibilityLabel: String {
         guard !segments.isEmpty else { return "Magpie Lite" }
-        return segments.map { "\($0.tool.displayName) 5 h \($0.fiveHour.text), 7 d \($0.sevenDay.text)" }.joined(separator: "; ")
+        func spoken(_ value: MenuBarValue) -> String { value == .missing ? value.text : "\(value.text) used" }
+        return segments.map { "\($0.tool.displayName) 5 h \(spoken($0.fiveHour)), 7 d \(spoken($0.sevenDay))" }.joined(separator: "; ")
     }
 
     public static func build(_ snapshots: [ToolSnapshot], isShown: (Tool) -> Bool) -> MenuBarSummary {
         let segments = Tool.allCases.compactMap { tool -> MenuBarSegment? in
-            guard isShown(tool), let snapshot = snapshots.first(where: { $0.tool == tool }), case .signedIn? = snapshot.live else { return nil }
+            guard isShown(tool), let snapshot = snapshots.first(where: { $0.tool == tool })?.hidingMinorGroups, case .signedIn? = snapshot.live else { return nil }
             let live = snapshot.accounts.first(where: \.isLive)
             let groups = live?.reading?.groups ?? []
             return MenuBarSegment(tool: tool, letter: tool.letter,
                                   fiveHour: MenuBarValue(remaining: groups.compactMap { $0.fiveHour?.remaining }.min()),
-                                  sevenDay: MenuBarValue(remaining: groups.compactMap { $0.sevenDay?.remaining }.min()),
-                                  stale: live?.stale ?? false)
+                                  sevenDay: MenuBarValue(remaining: groups.compactMap { $0.sevenDay?.remaining }.min()))
         }
         return MenuBarSummary(segments: segments)
     }

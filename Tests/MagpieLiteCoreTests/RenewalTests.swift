@@ -132,6 +132,7 @@ fileprivate func agyInner(_ envelope: VaultEnvelope?) -> [String: Any]? {
         }
         try await rig.save(live)
         await rig.poller.runBatch()
+        rig.clock.advance(60)
         await rig.poller.refresh(testKey(live))
         #expect(rig.tokenRequests.isEmpty)
         #expect(rig.tags == ["a", "a"])

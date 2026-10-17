@@ -28,9 +28,9 @@ fileprivate func value(_ text: String, _ low: Bool = false) -> MenuBarValue { Me
                          snapshot(.codex, groups: [group("", 80, 71)])]
         let summary = MenuBarSummary.build(snapshots) { _ in true }
         #expect(summary.segments == [
-            MenuBarSegment(tool: .claude, letter: "C", fiveHour: value("62%"), sevenDay: value("40%"), stale: false),
-            MenuBarSegment(tool: .codex, letter: "X", fiveHour: value("80%"), sevenDay: value("71%"), stale: false),
-            MenuBarSegment(tool: .agy, letter: "G", fiveHour: value("45%"), sevenDay: value("90%"), stale: false),
+            MenuBarSegment(tool: .claude, letter: "C", fiveHour: value("38%"), sevenDay: value("60%")),
+            MenuBarSegment(tool: .codex, letter: "X", fiveHour: value("20%"), sevenDay: value("29%")),
+            MenuBarSegment(tool: .agy, letter: "G", fiveHour: value("55%"), sevenDay: value("10%")),
         ])
     }
 
@@ -46,27 +46,27 @@ fileprivate func value(_ text: String, _ low: Bool = false) -> MenuBarValue { Me
 
     // MARK: F05-AC-5.c2
 
-    @Test func `REQ/F05-AC-5.c2 each window shows the lowest remaining across the live account's groups`() {
-        let agy = MenuBarSummary.build([snapshot(.agy, groups: [group("Gemini", 45, 90), group("Claude and GPT", 30, 95)])]) { _ in true }
-        #expect(agy.segments.first?.fiveHour == value("30%") && agy.segments.first?.sevenDay == value("90%"))
+    @Test func `REQ/F05-AC-5.c2 each window shows the highest used across the live account's groups, agy's Claude and GPT group left out`() {
+        let agy = MenuBarSummary.build([snapshot(.agy, groups: [group("Gemini", 45, 90), group("Gemini Pro", 60, 95), group("Claude and GPT", 0, 0)])]) { _ in true }
+        #expect(agy.segments.first?.fiveHour == value("55%") && agy.segments.first?.sevenDay == value("10%"))
         let claude = MenuBarSummary.build([snapshot(.claude, groups: [group("All models", 62, 40), group("Fable", nil, 28)])]) { _ in true }
-        #expect(claude.segments.first?.fiveHour == value("62%") && claude.segments.first?.sevenDay == value("28%"))
+        #expect(claude.segments.first?.fiveHour == value("38%") && claude.segments.first?.sevenDay == value("72%"))
         let weekly = MenuBarSummary.build([snapshot(.codex, groups: [group("", nil, 54)])]) { _ in true }
-        #expect(weekly.segments.first?.fiveHour == value("—") && weekly.segments.first?.sevenDay == value("54%"))
+        #expect(weekly.segments.first?.fiveHour == value("—") && weekly.segments.first?.sevenDay == value("46%"))
     }
 
     @Test func `REQ/F05-AC-5.c2 values round to whole percents`() {
         let summary = MenuBarSummary.build([snapshot(.agy, groups: [group("G", 95.45545, 14.5)])]) { _ in true }
-        #expect(summary.segments.first?.fiveHour.text == "95%")
-        #expect(summary.segments.first?.sevenDay.text == "15%")
+        #expect(summary.segments.first?.fiveHour.text == "5%")
+        #expect(summary.segments.first?.sevenDay.text == "86%")
     }
 
     // MARK: F05-AC-5.c3
 
-    @Test func `REQ/F05-AC-5.c3 a shown value under 15 is low and anything else is normal`() {
-        let cases: [(Double, Severity)] = [(0, .low), (14, .low), (14.4, .low), (14.5, .normal), (15, .normal), (39, .normal), (100, .normal)]
-        for (remaining, severity) in cases {
-            let summary = MenuBarSummary.build([snapshot(.claude, groups: [group("", remaining, nil)])]) { _ in true }
+    @Test func `REQ/F05-AC-5.c3 a shown value over 85 is low and anything else is normal`() {
+        let cases: [(Double, Severity)] = [(100, .low), (86, .low), (85.6, .low), (85.4, .normal), (85, .normal), (61, .normal), (0, .normal)]
+        for (used, severity) in cases {
+            let summary = MenuBarSummary.build([snapshot(.claude, groups: [group("", 100 - used, nil)])]) { _ in true }
             #expect(summary.segments.first?.fiveHour.severity == severity)
             #expect(summary.segments.first?.sevenDay.severity == .normal)
         }
@@ -74,20 +74,21 @@ fileprivate func value(_ text: String, _ low: Bool = false) -> MenuBarValue { Me
 
     // MARK: F05-AC-5.c4
 
-    @Test func `REQ/F05-AC-5.c4 only the stale tool's segment is marked stale and its low values stay low`() {
-        let summary = MenuBarSummary.build([snapshot(.claude, groups: [group("", 10, 50)], stale: true), snapshot(.codex, groups: [group("", 80, 71)])]) { _ in true }
-        #expect(summary.segments.map(\.stale) == [true, false])
-        #expect(summary.segments.first?.fiveHour == value("10%", true))
+    @Test func `REQ/F05-AC-5.c4 a stale tool's segment is drawn like a fresh one and its low values stay low`() {
+        let stale = MenuBarSummary.build([snapshot(.claude, groups: [group("", 10, 50)], stale: true), snapshot(.codex, groups: [group("", 80, 71)])]) { _ in true }
+        let fresh = MenuBarSummary.build([snapshot(.claude, groups: [group("", 10, 50)]), snapshot(.codex, groups: [group("", 80, 71)])]) { _ in true }
+        #expect(stale == fresh)
+        #expect(stale.segments.first?.fiveHour == value("90%", true))
     }
 
     // MARK: F05-AC-5.c5
 
     @Test func `REQ/F05-AC-5.c5 the spoken label names each segment's values`() {
         let summary = MenuBarSummary.build([snapshot(.claude, groups: [group("", 62, 40)]), snapshot(.codex, groups: [group("", 80, 71)])]) { _ in true }
-        #expect(summary.accessibilityLabel == "Claude Code 5 h 62%, 7 d 40%; Codex 5 h 80%, 7 d 71%")
+        #expect(summary.accessibilityLabel == "Claude Code 5 h 38% used, 7 d 60% used; Codex 5 h 20% used, 7 d 29% used")
         #expect(!summary.showsGlyphOnly)
         let weekly = MenuBarSummary.build([snapshot(.agy, groups: [group("", nil, 54)])]) { _ in true }
-        #expect(weekly.accessibilityLabel == "Antigravity CLI 5 h —, 7 d 54%")
+        #expect(weekly.accessibilityLabel == "Antigravity CLI 5 h —, 7 d 46% used")
     }
 
     // MARK: F05-AC-5.c7

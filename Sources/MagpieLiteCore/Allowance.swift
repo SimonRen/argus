@@ -5,6 +5,9 @@ public struct AllowanceWindow: Sendable, Equatable, Codable {
     public let remaining: Double
     public let resetsAt: Date?
 
+    /// What every percentage on screen shows.
+    public var used: Double { 100 - remaining }
+
     public init(remaining: Double, resetsAt: Date?) {
         self.remaining = min(100, max(0, remaining))
         self.resetsAt = resetsAt
@@ -93,7 +96,9 @@ public enum AllowanceParser {
                 case nil: break
                 }
             }
-            return AllowanceGroup(name: nonEmpty(group["displayName"]) ?? nonEmpty(group["name"]) ?? "", fiveHour: five, sevenDay: seven)
+            var name = nonEmpty(group["displayName"]) ?? nonEmpty(group["name"]) ?? ""
+            if name.lowercased().hasSuffix(" models") { name.removeLast(" models".count) }   // "Gemini Models" → "Gemini"
+            return AllowanceGroup(name: name, fiveHour: five, sevenDay: seven)
         }
     }
 

@@ -46,7 +46,6 @@ import SwiftUI
 struct ManagerView: View {
     let state: AppState
     let commands: AccountCommands
-    let poller: Poller
     let preferences: MenuBarPreferences
     let loginItem: LoginItemController
 
@@ -93,8 +92,12 @@ struct ManagerView: View {
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(width: 180)
             }
-            Button { Task { await poller.refreshLive() } } label: {
-                Label("Refresh live accounts", systemImage: "arrow.clockwise").font(.system(size: 12, weight: .semibold))
+            if let hint = commands.hint {
+                Text(hint).font(.system(size: 11.5)).foregroundStyle(t.warnText).lineLimit(1).transition(.opacity)
+            }
+            RefreshButton(action: { await commands.refreshLive() }) { angle in
+                Label { Text("Refresh live accounts") } icon: { Image(systemName: "arrow.clockwise").rotationEffect(angle) }
+                    .font(.system(size: 12, weight: .semibold))
                     .padding(.horizontal, 12).frame(height: 28).background(t.btn, in: RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
@@ -218,7 +221,7 @@ struct ManagerView: View {
             }
             .font(.system(size: 10.5, weight: .semibold)).kerning(0.4).foregroundStyle(t.ter)
             .padding(.horizontal, 16).padding(.vertical, 8).background(t.thead)
-            ForEach(rows) { ManagerRowView(row: $0, tool: selected, theme: t, columns: columns, commands: commands, poller: poller) }
+            ForEach(rows) { ManagerRowView(row: $0, tool: selected, theme: t, columns: columns, commands: commands) }
             if !rows.contains(where: \.isSaved) {
                 VStack(spacing: 6) {
                     Text(ManagerText.emptyTitle).font(.system(size: 14, weight: .semibold))
@@ -252,7 +255,6 @@ private struct ManagerRowView: View {
     let theme: Theme
     let columns: Columns
     let commands: AccountCommands
-    let poller: Poller
 
     var body: some View {
         let t = theme
@@ -288,8 +290,11 @@ private struct ManagerRowView: View {
                     }
                     .help(row.switchDisabledReason ?? "Switch \(tool.displayName) to \(row.email)")
                 }
-                iconButton("arrow.clockwise", help: "Refresh this account", enabled: row.refreshEnabled, t) { Task { await poller.refresh(row.id) } }
-                    .accessibilityLabel("Refresh \(tool.displayName) \(row.email)")
+                RefreshButton(action: { await commands.refresh(row.id) }) { angle in
+                    Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold)).rotationEffect(angle).frame(width: 26, height: 26)
+                }
+                .buttonStyle(.plain).foregroundStyle(t.sub).disabled(!row.refreshEnabled).opacity(row.refreshEnabled ? 1 : 0.35).help("Refresh this account")
+                .accessibilityLabel("Refresh \(tool.displayName) \(row.email)")
                 iconButton("trash", help: "Remove this saved login", enabled: row.isSaved, t) { Task { await commands.remove(row.id) } }
                     .accessibilityLabel("Remove \(row.email)")
             }
@@ -321,7 +326,6 @@ private struct ManagerRowView: View {
                 }
             }
         }
-        .opacity(row.dimmed ? 0.7 : 1)
         .frame(width: columns.window, alignment: .leading)
     }
 

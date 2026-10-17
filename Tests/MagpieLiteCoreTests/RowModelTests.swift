@@ -27,6 +27,18 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
 }
 
 @Suite struct RowModelTests {
+    @Test func `the popover leaves out agy's Claude and GPT group, the manager keeps it, and other tools are untouched`() {
+        let groups = reading([("Gemini", 45, 90), ("Claude and GPT", 0, 0)])
+        let agy = snapshot([account("g@example.com", live: true, reading: groups, tool: .agy),
+                            account("h@example.com", reading: groups, tool: .agy)], live: .signedIn(testLogin(.agy, "g")), tool: .agy)
+        let popover = card(agy.hidingMinorGroups, expanded: true)
+        #expect(popover.liveRow?.groups.map(\.name) == ["Gemini"] && popover.liveRow?.groups.first?.sevenDay.percentText == "10%")
+        #expect(popover.others.first?.groups.count == 1)
+        #expect(card(agy, expanded: true).liveRow?.groups.map(\.name) == ["Gemini", "Claude and GPT"])
+        let claude = snapshot([account("c@example.com", live: true, reading: reading([("All models", 50, 50), ("Claude Fable", nil, 40)]))])
+        #expect(claude.hidingMinorGroups == claude)
+    }
+
     // MARK: F06-AC-6.c2
 
     @Test func `REQ/F06-AC-6.c2 a card shows its live row and +N more, and expanded lists the others by email`() {
@@ -54,12 +66,11 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
     @Test func `REQ/F06-AC-6.c4 each state shows on its row in order: stale age, blocked state, kept`() {
         let stale = AccountRowProbe(account("s@example.com", kept: true, flag: .needsSignIn, reading: reading([("", 50, 50)], at: now - 1080), stale: true))
         #expect(stale.row.badges == [.stale("18 min ago"), .needsSignIn, .kept])
-        #expect(stale.row.dimmed)
         for (flag, badge) in [(AccountFlag.appNeedsUpdate, RowBadge.appNeedsUpdate), (.incomplete, .incomplete), (.unreadable, .unreadable)] {
             #expect(AccountRowProbe(account("x@example.com", flag: flag)).row.badges == [badge])
         }
         let staleWithoutReading = AccountRowProbe(account("n@example.com", stale: true))
-        #expect(staleWithoutReading.row.badges.isEmpty && staleWithoutReading.row.dimmed)
+        #expect(staleWithoutReading.row.badges.isEmpty)
         #expect(AccountRowProbe(account("", flag: .unreadable)).row.email == "Unknown account")
     }
 
@@ -91,7 +102,7 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
                         account("best@example.com", reading: reading([("All models", 90, 70)])),
                         account("tie@example.com", reading: reading([("All models", 70, 90)]))]
         let c = card(snapshot(accounts))
-        #expect(c.suggestion == Suggestion(target: AccountKey(tool: .claude, id: "best@example.com"), text: "Running low. best@example.com has 70% left."))
+        #expect(c.suggestion == Suggestion(target: AccountKey(tool: .claude, id: "best@example.com"), text: "Running low. best@example.com has used 30%."))
     }
 
     @Test func `REQ/F06-AC-6.c6 ties go to the first account in list order`() {
@@ -135,36 +146,40 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
 
     // MARK: F06-AC-6.c8
 
-    @Test func `REQ/F06-AC-6.c8 bars are ok at 40 or more, warn 15 to 39, low under 15, and a missing window is an empty track`() {
+    @Test func `REQ/F06-AC-6.c8 bands follow the remaining share, text and fill show the share used, and a missing window is an empty track`() {
         #expect([100, 40, 39.6, 39.4, 15, 14.6, 14.4, 0].map(band) == [.ok, .ok, .ok, .warn, .warn, .warn, .low, .low])
         #expect(band(nil) == .empty)
         let row = AccountRowProbe(account("x@example.com", reading: reading([("", nil, 62)]))).row
         #expect(row.groups[0].fiveHour == WindowCell(label: "5h", percentText: "—", band: .empty, resetText: "weekly only", fill: 0))
-        #expect(row.groups[0].sevenDay.percentText == "62%" && row.groups[0].sevenDay.band == .ok && row.groups[0].sevenDay.fill == 0.62)
+        #expect(row.groups[0].sevenDay.percentText == "38%" && row.groups[0].sevenDay.band == .ok && row.groups[0].sevenDay.fill == 0.38)
         let none = AccountRowProbe(account("y@example.com")).row
         #expect(none.groups.count == 1 && none.groups[0].fiveHour.band == .empty && none.groups[0].sevenDay.percentText == "—")
     }
 
     // MARK: F06-AC-6.c9
 
-    @Test func `REQ/F06-AC-6.c9 group names show only when an account has more than one group`() {
+    @Test func `REQ/F06-AC-6.c9 group names show when an account has more than one group, and always for agy`() {
         let two = AccountRowProbe(account("x@example.com", reading: reading([("Gemini", 45, 90), ("Claude & GPT", 30, 95)]))).row
         #expect(two.groups.map(\.name) == ["Gemini", "Claude & GPT"])
         let one = AccountRowProbe(account("y@example.com", reading: reading([("All models", 62, 40)]))).row
         #expect(one.groups.map(\.name) == [nil])
+        #expect(AccountRowProbe(account("g@example.com", reading: reading([("Gemini", 45, 90)]), tool: .agy)).row.groups.map(\.name) == ["Gemini"])
+        #expect(AccountRowProbe(account("u@example.com", reading: reading([("", 45, 90)]), tool: .agy)).row.groups.map(\.name) == [nil])
     }
 
     // MARK: F06-AC-6.c11
 
-    @Test func `REQ/F06-AC-6.c11 the rate-limit notice names the vendor, the next check and the newest reading`() {
+    @Test func `REQ/F06-AC-6.c11 the refresh hint says when to try again, naming a rate-limiting vendor`() {
         let utc = TimeZone(identifier: "UTC")!
         let until = Date(timeIntervalSince1970: 1_789_999_200)   // 14:00 UTC
-        #expect(PopoverText.rateLimitNotice(.claude, until: until, newestReading: Date(timeIntervalSince1970: 1_789_997_400), timeZone: utc)
-                == "Claude allowance is rate-limited by the vendor; the next check is at 14:00. Readings shown are from 13:30.")
-        #expect(PopoverText.rateLimitNotice(.agy, until: until, newestReading: nil, timeZone: utc)
-                == "Antigravity allowance is rate-limited by the vendor; the next check is at 14:00.")
-        #expect(PopoverText.rateLimitNotice(.codex, until: until, newestReading: nil, timeZone: TimeZone(identifier: "Asia/Shanghai")!)
-                == "Codex allowance is rate-limited by the vendor; the next check is at 22:00.")
+        #expect(PopoverText.refreshHint(RefreshDeferral(until: until, rateLimitedBy: nil), now: until - 47.2, timeZone: utc)
+                == "Refreshed moments ago. Try again in 48 s.")
+        #expect(PopoverText.refreshHint(RefreshDeferral(until: until, rateLimitedBy: nil), now: until, timeZone: utc)
+                == "Refreshed moments ago. Try again in 1 s.")
+        #expect(PopoverText.refreshHint(RefreshDeferral(until: until, rateLimitedBy: .claude), now: until - 300, timeZone: utc)
+                == "Claude is rate-limited. Next check at 14:00.")
+        #expect(PopoverText.refreshHint(RefreshDeferral(until: until, rateLimitedBy: .codex), now: until - 300, timeZone: TimeZone(identifier: "Asia/Shanghai")!)
+                == "Codex is rate-limited. Next check at 22:00.")
     }
 
     // MARK: F06-AC-6.c12

@@ -16,7 +16,7 @@ public struct WindowCell: Sendable, Equatable {
     public let percentText: String
     public let band: Band
     public let resetText: String
-    /// 0…1 bar fill.
+    /// 0…1 bar fill: the share used.
     public let fill: Double
 
     public init(label: String, percentText: String, band: Band, resetText: String, fill: Double) {
@@ -28,8 +28,8 @@ public struct WindowCell: Sendable, Equatable {
     }
 
     init(label: String, window: AllowanceWindow?, resetText: String) {
-        self.init(label: label, percentText: window.map { "\(Int($0.remaining.rounded()))%" } ?? "—", band: MagpieLiteCore.band(window?.remaining),
-                  resetText: resetText, fill: (window?.remaining ?? 0) / 100)
+        self.init(label: label, percentText: window.map { "\(Int($0.used.rounded()))%" } ?? "—", band: MagpieLiteCore.band(window?.remaining),
+                  resetText: resetText, fill: (window?.used ?? 0) / 100)
     }
 }
 
@@ -56,8 +56,6 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
     public let isSaved: Bool
     public let badges: [RowBadge]
     public let groups: [GroupRow]
-    /// Stale → content at 70 % opacity.
-    public let dimmed: Bool
     /// nil → Switch enabled (live rows show the Live pill instead).
     public let switchDisabledReason: String?
     public let refreshEnabled: Bool
@@ -81,16 +79,16 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
         if account.kept { badges.append(.kept) }
         self.badges = badges
         let readingGroups = account.reading?.groups ?? []
-        let named = readingGroups.count > 1
+        // agy's groups are model families, named even when only one is shown.
+        let named = readingGroups.count > 1 || account.key.tool == .agy
         groups = readingGroups.isEmpty
             ? [GroupRow(name: nil, fiveHour: WindowCell(label: "5h", window: nil, resetText: "—"), sevenDay: WindowCell(label: "7d", window: nil, resetText: "—"))]
             : readingGroups.map { g in
                 let fiveReset = g.fiveHour == nil && g.sevenDay != nil ? "weekly only" : PopoverText.resetText(g.fiveHour, now: now)
-                return GroupRow(name: named ? g.name : nil,
+                return GroupRow(name: named && !g.name.isEmpty ? g.name : nil,
                                 fiveHour: WindowCell(label: "5h", window: g.fiveHour, resetText: fiveReset),
                                 sevenDay: WindowCell(label: "7d", window: g.sevenDay, resetText: PopoverText.resetText(g.sevenDay, now: now)))
             }
-        dimmed = account.stale
         if let live, !live.allowsSwitch {
             switchDisabledReason = live.statusText(account.key.tool)
         } else {
@@ -140,7 +138,7 @@ public struct ToolCard: Sendable, Equatable {
             }
             if let (account, s) = best, Int(s.rounded()) >= 40 {
                 let email = account.label.isEmpty ? "Unknown account" : account.label
-                suggestion = Suggestion(target: account.key, text: "Running low. \(email) has \(Int(s.rounded()))% left.")
+                suggestion = Suggestion(target: account.key, text: "Running low. \(email) has used \(Int((100 - s).rounded()))%.")
             }
         }
         var unsaved: String?
@@ -180,7 +178,11 @@ public enum PopoverText {
         return "Live updated \(age(since: lastLiveFetch, now: now)) · every \(intervalMinutes) min"
     }
 
-    public static func rateLimitNotice(_ tool: Tool, until: Date, newestReading: Date?, timeZone: TimeZone) -> String {
+    /// The short-lived hint after a refresh that sent nothing.
+    public static func refreshHint(_ deferral: RefreshDeferral, now: Date, timeZone: TimeZone) -> String {
+        guard let tool = deferral.rateLimitedBy else {
+            return "Refreshed moments ago. Try again in \(max(1, Int(deferral.until.timeIntervalSince(now).rounded(.up)))) s."
+        }
         let vendor = switch tool {
         case .claude: "Claude"
         case .codex: "Codex"
@@ -190,7 +192,6 @@ public enum PopoverText {
         clock.locale = Locale(identifier: "en_US_POSIX")
         clock.timeZone = timeZone
         clock.dateFormat = "HH:mm"
-        let readings = newestReading.map { " Readings shown are from \(clock.string(from: $0))." } ?? ""
-        return "\(vendor) allowance is rate-limited by the vendor; the next check is at \(clock.string(from: until)).\(readings)"
+        return "\(vendor) is rate-limited. Next check at \(clock.string(from: deferral.until))."
     }
 }

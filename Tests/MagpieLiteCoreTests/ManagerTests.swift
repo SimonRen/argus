@@ -65,6 +65,18 @@ import MagpieLiteCore
         #expect(account.isLive && !account.isSaved)
     }
 
+    @Test func `REQ/F06-AC-6.c11 a refresh that sends nothing shows the hint; one that sends shows none`() async throws {
+        let a = testLogin(.claude, "a")
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]])
+        let cmds = commands(rig)
+        await cmds.refreshLive()
+        #expect(cmds.hint == nil)
+        rig.clock.advance(12)
+        await cmds.refresh(testKey(a))
+        #expect(cmds.hint == "Refreshed moments ago. Try again in 48 s.")
+        #expect(rig.tags == ["a"])
+    }
+
     // MARK: F07-AC-7.c3
 
     @Test func `REQ/F07-AC-7.c3 picking an interval persists it and the loop's next sleep uses it`() async throws {
@@ -158,7 +170,7 @@ import MagpieLiteCore
         #expect(MenuBarSummary.build([snapshot], isShown: prefs.isShown).showsGlyphOnly)
         let row = ManagerSidebarRow.build(snapshot, isShown: prefs.isShown(.claude))
         #expect(!row.showsMenubarGlyph)
-        #expect(row.liveEmail == "a@example.com" && row.fiveHour.text == "90%" && row.sevenDay.text == "80%")
+        #expect(row.liveEmail == "a@example.com" && row.fiveHour.text == "10%" && row.sevenDay.text == "20%")
     }
 
     @Test func `a sidebar row without a live login shows dashes`() {

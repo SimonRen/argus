@@ -89,7 +89,7 @@ fileprivate func fetcher(_ stub: TestHTTPStub, timeout: TimeInterval = HTTPClien
 
     @Test func `REQ/F04-AC-4.c3 agy buckets map per group with fractions and disabled buckets skipped`() throws {
         let groups = try AllowanceParser.agy(Data(agyFixture.utf8))
-        #expect(groups.map(\.name) == ["Gemini Models", "Claude and GPT models"])
+        #expect(groups.map(\.name) == ["Gemini", "Claude and GPT"])
         #expect(abs(groups[0].fiveHour!.remaining - 95.45545) < 0.0001)
         #expect(groups[0].fiveHour!.resetsAt == iso("2099-01-01T05:00:00Z"))
         #expect(groups[0].sevenDay == AllowanceWindow(remaining: 75, resetsAt: iso("2099-01-07T00:00:00Z")))

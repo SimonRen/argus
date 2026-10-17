@@ -35,7 +35,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(rig.state.status[testKey(a)]?.reading?.groups.first?.name == "All models")
         #expect(rig.state.status[testKey(b)]?.reading != nil)
         #expect(rig.state.status[testKey(c)] == nil)
-        #expect(rig.state.status[testKey(f)]?.reading?.groups.first?.name == "Gemini Models")
+        #expect(rig.state.status[testKey(f)]?.reading?.groups.first?.name == "Gemini")
         #expect(rig.state.lastLiveFetch == rig.clock.now)
         #expect(rig.tools[.claude]!.reads == 1)
     }
@@ -82,6 +82,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
         await rig.poller.runBatch()
         #expect(rig.state.status[testKey(a)]?.stale == false)
         #expect(rig.state.rateLimitedUntil[.claude] == nil)
+        rig.clock.advance(60)
         await rig.poller.refresh(testKey(b))
         #expect(rig.state.rateLimitedUntil[.claude] == rig.clock.now + 300)
     }
@@ -156,12 +157,30 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(rig.tags == ["e", "g", "e"])
     }
 
-    @Test func `a Claude reading is fetched again within 60 s`() async throws {
-        let rig = try PollerRig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]])
+    @Test func `REQ/F04-AC-4.c16 any account fetched under 60 s ago, even unsuccessfully, is not sent again and the refresh says until when`() async throws {
+        let replies = ReplyScript([.json(503, "busy"), .json(200, claudeUsageOK)])
+        let a = testLogin(.claude, "a")
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]]) { _ in replies.next() }
+        let start = rig.clock.now
         await rig.poller.runBatch()
         rig.clock.advance(10)
-        await rig.poller.refreshLive()
+        #expect(await rig.poller.refreshLive() == RefreshDeferral(until: start + 60, rateLimitedBy: nil))
+        #expect(await rig.poller.refresh(testKey(a)) == RefreshDeferral(until: start + 60, rateLimitedBy: nil))
+        #expect(rig.tags == ["a"])
+        #expect(rig.state.lastLiveFetch == start)
+        rig.clock.advance(50)
+        #expect(await rig.poller.refreshLive() == nil)
         #expect(rig.tags == ["a", "a"])
+        #expect(rig.state.lastLiveFetch == rig.clock.now)
+    }
+
+    @Test func `REQ/F04-AC-4.c16 a refresh held by a 429 backoff names the vendor and sends nothing`() async throws {
+        let a = testLogin(.claude, "a")
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]]) { _ in .json(429, "{}", headers: ["Retry-After": "120"]) }
+        await rig.poller.runBatch()
+        rig.clock.advance(90)
+        #expect(await rig.poller.refresh(testKey(a)) == RefreshDeferral(until: rig.clock.now + 30, rateLimitedBy: .claude))
+        #expect(rig.tags == ["a"])
     }
 
     // MARK: F04-AC-4.c19

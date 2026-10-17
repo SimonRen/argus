@@ -83,7 +83,6 @@ import Observation
     /// One non-template image; colours resolved for the current drawing appearance.
     static func image(_ summary: MenuBarSummary, dark: Bool) -> NSImage {
         let label = NSColor.labelColor.usingColorSpace(.sRGB) ?? .black
-        let secondary = NSColor.secondaryLabelColor.usingColorSpace(.sRGB) ?? .gray
         let low = dark ? NSColor(srgbRed: 1, green: 0x8A / 255, blue: 0x8A / 255, alpha: 1)
                        : NSColor(srgbRed: 0xC2 / 255, green: 0x36 / 255, blue: 0x2F / 255, alpha: 1)
         let widths = summary.segments.map { segment in
@@ -93,19 +92,17 @@ import Observation
         let image = NSImage(size: NSSize(width: ceil(total), height: height), flipped: false) { _ in
             var x = padding
             for (segment, valueWidth) in zip(summary.segments, widths) {
-                let alpha: CGFloat = segment.stale ? 0.7 : 1
-                let ink = (segment.stale ? secondary : label).withAlphaComponent(alpha)
                 let square = NSRect(x: x + 0.75, y: (height - mark) / 2 + 0.75, width: mark - 1.5, height: mark - 1.5)
                 let path = NSBezierPath(roundedRect: square, xRadius: 4, yRadius: 4)
                 path.lineWidth = 1.5
-                ink.setStroke()
+                label.setStroke()
                 path.stroke()
-                let letter = NSAttributedString(string: segment.letter, attributes: [.font: letterFont, .foregroundColor: ink])
+                let letter = NSAttributedString(string: segment.letter, attributes: [.font: letterFont, .foregroundColor: label])
                 let size = letter.size()
                 letter.draw(at: NSPoint(x: x + (mark - size.width) / 2, y: (height - size.height) / 2))
                 x += mark + gap
                 for (value, top) in [(segment.fiveHour, true), (segment.sevenDay, false)] {
-                    let color = value.severity == .low ? low.withAlphaComponent(alpha) : ink
+                    let color = value.severity == .low ? low : label
                     let text = NSAttributedString(string: value.text, attributes: [.font: valueFont, .foregroundColor: color])
                     let w = text.size().width
                     text.draw(at: NSPoint(x: x + valueWidth - w, y: top ? 10 : 0))
