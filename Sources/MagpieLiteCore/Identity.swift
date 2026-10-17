@@ -221,22 +221,20 @@ func hexData(_ hex: String) -> Data? {
 
 /// RFC 3339 / ISO 8601 with any number of fractional digits and `Z` or `±hh:mm`.
 func parseRFC3339(_ s: String) -> Date? {
-    let pattern = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?([Zz]|[+-]\d{2}:\d{2})$/
-    guard let m = s.wholeMatch(of: pattern) else { return nil }
-    var comps = DateComponents()
-    comps.year = Int(m.1); comps.month = Int(m.2); comps.day = Int(m.3)
-    comps.hour = Int(m.4); comps.minute = Int(m.5); comps.second = Int(m.6)
+    let pattern = /^([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt]([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]+))?(?:([Zz])|([+-])([0-9]{2}):([0-9]{2}))$/
+    guard let m = s.wholeMatch(of: pattern),
+          let year = Int(m.1), let month = Int(m.2), let day = Int(m.3),
+          let hour = Int(m.4), let minute = Int(m.5), let second = Int(m.6) else { return nil }
+    var offset = 0
+    if m.8 == nil {
+        guard let sign = m.9, let oh = m.10.flatMap({ Int($0) }), let om = m.11.flatMap({ Int($0) }) else { return nil }
+        offset = (sign == "-" ? -1 : 1) * (oh * 3600 + om * 60)
+    }
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(identifier: "UTC")!
+    let comps = DateComponents(year: year, month: month, day: day, hour: hour, minute: minute, second: second)
     guard let base = calendar.date(from: comps) else { return nil }
-    var offset = 0
-    let zone = String(m.8)
-    if zone.uppercased() != "Z" {
-        let sign = zone.hasPrefix("-") ? -1 : 1
-        let hm = zone.dropFirst().split(separator: ":").compactMap { Int($0) }
-        offset = sign * (hm[0] * 3600 + hm[1] * 60)
-    }
-    let fraction = m.7.map { Double("0." + $0) ?? 0 } ?? 0
+    let fraction = m.7.flatMap { Double("0." + $0) } ?? 0
     return base.addingTimeInterval(fraction - Double(offset))
 }
 

@@ -59,3 +59,16 @@ import MagpieLiteCore
         #expect(expiry("2026-01-01 00:00:00") == nil)
     }
 }
+
+@Suite struct DateParsingTests {
+    @Test func `non-ASCII digits and malformed offsets parse as no date instead of crashing`() {
+        func expiry(_ s: String) -> Date? {
+            tokenSet(.agy, bytes: utf8(#"{"token":{"access_token":"a","refresh_token":"r","expiry":"\#(s)"}}"#))?.accessTokenExpiry
+        }
+        #expect(expiry("٢٠٢٦-01-01T00:00:00Z") == nil)
+        #expect(expiry("2026-01-01T00:00:00+٠٨:٠٠") == nil)
+        #expect(expiry("2026-01-01T00:00:00+08") == nil)
+        #expect(expiry("2026-01-01T00:00:00.٥Z") == nil)
+        #expect(expiry("2026-01-01T00:00:00-01:30") == Date(timeIntervalSince1970: 1_767_225_600 + 5400))
+    }
+}
