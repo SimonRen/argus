@@ -191,26 +191,7 @@ public actor Vault {
     }
 
     private func stagedWrite(_ data: Data, to target: URL) throws {
-        let staged = target.deletingLastPathComponent()
-            .appending(path: "\(target.lastPathComponent).\(UUID().uuidString.lowercased()).tmp")
-        let fd = open(staged.path, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0o600)
-        guard fd >= 0 else { throw VaultError("can't create a file in the vault (errno \(errno))") }
-        var ok = fchmod(fd, 0o600) == 0
-        ok = ok && data.withUnsafeBytes { buf in
-            var offset = 0
-            while offset < buf.count {
-                let n = Darwin.write(fd, buf.baseAddress! + offset, buf.count - offset)
-                if n <= 0 { return false }
-                offset += n
-            }
-            return true
-        }
-        ok = ok && fcntl(fd, F_FULLFSYNC) == 0
-        close(fd)
-        guard ok else {
-            unlink(staged.path)
-            throw VaultError("can't write the vault file")
-        }
+        guard let staged = writeStagedFile(data, besides: target) else { throw VaultError("can't write the vault file") }
         if faults.failAfterStagedWrite { throw VaultError("vault write interrupted") }
         try Self.commit(staged, to: target)
     }
@@ -283,6 +264,39 @@ public actor Vault {
         guard envelope.payloadBytes != nil else { return .unreadable(tool: tool, id: id, reason: "payload is not base64") }
         return .valid(envelope)
     }
+}
+
+/// Writes `data` to a new 0600 file beside `target` (`<name>.<random>.tmp`, `O_EXCL`) and flushes it to disk with
+/// `F_FULLFSYNC`; nil (nothing left behind) when any step fails.
+func writeStagedFile(_ data: Data, besides target: URL) -> URL? {
+    let staged = target.deletingLastPathComponent()
+        .appending(path: "\(target.lastPathComponent).\(UUID().uuidString.lowercased()).tmp")
+    let fd = open(staged.path, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0o600)
+    guard fd >= 0 else { return nil }
+    var ok = fchmod(fd, 0o600) == 0
+    ok = ok && data.withUnsafeBytes { buf in
+        var offset = 0
+        while offset < buf.count {
+            let n = Darwin.write(fd, buf.baseAddress! + offset, buf.count - offset)
+            if n <= 0 { return false }
+            offset += n
+        }
+        return true
+    }
+    ok = ok && fcntl(fd, F_FULLFSYNC) == 0
+    close(fd)
+    if !ok { unlink(staged.path) }
+    return ok ? staged : nil
+}
+
+/// Replaces `target` with `data` atomically: staged 0600 file, fsync, `rename(2)`.
+func writeFileAtomically(_ data: Data, to target: URL) -> Bool {
+    guard let staged = writeStagedFile(data, besides: target) else { return false }
+    guard rename(staged.path, target.path) == 0 else {
+        unlink(staged.path)
+        return false
+    }
+    return true
 }
 
 /// Single-instance guard: a non-blocking exclusive `flock` on `vault/.lock`, released on deinit.
