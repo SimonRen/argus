@@ -143,7 +143,22 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(await restart().status[key]?.flag == .ok)
     }
 
-    // MARK: F04-AC-4.c6
+    @Test func `"Live updated" dates the live readings on show, also right after a restart before any fetch`() async throws {
+        let a = testLogin(.claude, "a")
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]], persistReadings: true)
+        let fetched = rig.clock.now
+        await rig.poller.runBatch()
+        #expect(rig.state.liveUpdatedAt == fetched)
+        rig.clock.advance(60)
+        let state = AppState(defaults: UserDefaults(suiteName: UUID().uuidString)!, now: rig.clock.closure)
+        let restarted = Poller(state: state, tools: [rig.tools[.claude]!], vault: rig.vault,
+                               fetcher: AllowanceFetcher(http: HTTPClient(session: rig.stub.session), version: "0", now: rig.clock.closure),
+                               sleeper: RecordingSleeper(), now: rig.clock.closure, readingsFile: rig.box.supportRoot.appending(path: "readings.json"))
+        await restarted.rereadLive()
+        #expect(state.lastLiveFetch == nil)
+        #expect(state.liveUpdatedAt == fetched)
+    }
+
     // MARK: F04-AC-4.c6
 
     @Test func `REQ/F04-AC-4.c6 a failed fetch keeps the last good reading, marked stale with its age`() async throws {

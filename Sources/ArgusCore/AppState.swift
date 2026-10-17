@@ -105,6 +105,16 @@ extension ToolSnapshot {
     /// When the last live-account fetch completed.
     public internal(set) var lastLiveFetch: Date?
 
+    /// When the live accounts' allowance shown was read: the newest of their readings (kept across launches) and the
+    /// last live fetch; nil when there is none.
+    public var liveUpdatedAt: Date? {
+        let readings = Tool.allCases.compactMap { tool -> Date? in
+            guard case .signedIn(let login)? = live[tool] else { return nil }
+            return status[AccountKey(tool: tool, id: login.identity.fileID)]?.reading?.fetchedAt
+        }
+        return (readings + [lastLiveFetch].compactMap { $0 }).max()
+    }
+
     public init(defaults: UserDefaults, now: @escaping @Sendable () -> Date = { Date() }) {
         self.defaults = defaults
         self.now = now

@@ -94,23 +94,18 @@ import Observation
             Task { @MainActor in self?.render() }
         }
         guard let button = item.button else { return }
-        if summary.showsGlyphOnly {
-            button.image = Self.glyph()
-        } else {
-            var image: NSImage?
-            button.effectiveAppearance.performAsCurrentDrawingAppearance {
-                image = Self.image(summary, dark: button.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
-            }
-            button.image = image
-        }
+        button.image = summary.showsGlyphOnly ? Self.glyph() : Self.image(summary)
         button.setAccessibilityLabel(summary.accessibilityLabel)
     }
 
     // MARK: - Drawing (DEC-10)
 
     /// `mark` is the letter fallback's box; a tool icon takes the standard 18 pt menubar size.
-    private static let padding: CGFloat = 8, mark: CGFloat = 14, iconMark: CGFloat = 18, gap: CGFloat = 4, spacing: CGFloat = 10, height: CGFloat = 22
-    private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+    /// The system already spaces status items apart, so the side padding is small; the tool icons carry about 10 % empty
+    /// margin per side, so the icon-to-value gap and the gap between tools are drawn tighter than they read.
+    private static let padding: CGFloat = 2, mark: CGFloat = 14, iconMark: CGFloat = 18, gap: CGFloat = 1, spacing: CGFloat = 5, height: CGFloat = 22
+    /// The menu bar's own font (size and regular weight), with digits of equal width so values don't shift as they change.
+    private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)
     private static let letterFont = NSFont.systemFont(ofSize: 8.5, weight: .heavy)
 
     /// A white-silhouette tool icon filled with `color`.
@@ -123,11 +118,17 @@ import Observation
         }
     }
 
-    /// One non-template image; colours resolved for the current drawing appearance.
-    static func image(_ summary: MenuBarSummary, dark: Bool) -> NSImage {
-        let label = NSColor.labelColor.usingColorSpace(.sRGB) ?? .black
-        let low = dark ? NSColor(srgbRed: 1, green: 0x8A / 255, blue: 0x8A / 255, alpha: 1)
-                       : NSColor(srgbRed: 0xC2 / 255, green: 0x36 / 255, blue: 0x2F / 255, alpha: 1)
+    /// A value over 85 % used, light or dark to match the menu bar.
+    private static let low = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 1, green: 0x8A / 255, blue: 0x8A / 255, alpha: 1)
+            : NSColor(srgbRed: 0xC2 / 255, green: 0x36 / 255, blue: 0x2F / 255, alpha: 1)
+    }
+
+    /// One non-template image whose colours resolve when it is drawn, in the button's own appearance, so the first frame
+    /// after launch already matches the menu bar (resolving them up front drew a light-mode image until the button settled).
+    static func image(_ summary: MenuBarSummary) -> NSImage {
+        let label = NSColor.labelColor
         let widths = summary.segments.map { width($0.sevenDay.text) }
         let glyphs = summary.segments.map { ToolIcon.glyph($0.tool).map { tinted($0, label) } }
         let marks = glyphs.map { $0 == nil ? mark : iconMark }

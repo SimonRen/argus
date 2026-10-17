@@ -63,8 +63,8 @@ struct PopoverView: View {
     private func header(_ t: Theme, now: Date) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Allowance").font(.system(size: 15, weight: .semibold))
-                Text(commands.hint ?? PopoverText.subtitle(lastLiveFetch: state.lastLiveFetch, intervalMinutes: state.intervalMinutes, now: now))
+                Text("Argus").font(.system(size: 15, weight: .semibold))
+                Text(commands.hint ?? PopoverText.subtitle(lastLiveFetch: state.liveUpdatedAt, intervalMinutes: state.intervalMinutes, now: now))
                     .font(.system(size: 11.5)).foregroundStyle(commands.hint == nil ? t.sub : t.warnText)
                     .lineLimit(1).minimumScaleFactor(0.85).animation(.easeInOut(duration: 0.2), value: commands.hint)
             }

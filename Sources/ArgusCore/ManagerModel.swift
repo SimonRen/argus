@@ -36,6 +36,4 @@ public enum ManagerText {
     public static func emptyHint(_ tool: Tool) -> String {
         "Sign in with \(tool.displayName) as usual, then choose Save current login to keep it here."
     }
-
-    public static let footerHint = "To add an account, sign in with the tool itself — without signing out first — then choose Save current login."
 }

@@ -207,6 +207,5 @@ import ArgusCore
         #expect(ManagerText.header(rig.state.snapshot(.claude)) == "Signed in as a@example.com · 2 saved")
         #expect(ManagerText.header(rig.state.snapshot(.codex)) == "Signed in as x@example.com — not saved · 0 saved")
         #expect(ManagerText.header(rig.state.snapshot(.agy)) == "Not signed in · 0 saved")
-        #expect(ManagerText.footerHint == "To add an account, sign in with the tool itself — without signing out first — then choose Save current login.")
     }
 }

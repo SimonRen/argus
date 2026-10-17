@@ -71,16 +71,9 @@ struct ManagerView: View {
                     t.hair.frame(width: 1)
                     detail(t, now: context.date)
                 }
-                t.hair.frame(height: 1)
-                HStack(alignment: .top, spacing: 24) {
-                    Text(ManagerText.footerHint)
-                    Spacer()
-                    Text("Saved logins: owner-only files in Application Support, kept out of Time Machine.")
-                }
-                .font(.system(size: 11.5)).foregroundStyle(t.sub).padding(.horizontal, 20).padding(.vertical, 12)
             }
             // The interval is the pop-up beside it, so the subtitle carries only the age.
-            .navigationSubtitle(commands.hint ?? state.lastLiveFetch.map { "Live updated \(PopoverText.age(since: $0, now: context.date))" } ?? "Not updated yet")
+            .navigationSubtitle(commands.hint ?? state.liveUpdatedAt.map { "Live updated \(PopoverText.age(since: $0, now: context.date))" } ?? "Not updated yet")
         }
         .navigationTitle("Argus")
         .toolbar { toolbar(t) }
@@ -95,10 +88,14 @@ struct ManagerView: View {
     @ToolbarContentBuilder
     private func toolbar(_ t: Theme) -> some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
-            Picker("Refresh interval", selection: Binding(get: { state.intervalMinutes }, set: { commands.setInterval($0) })) {
-                ForEach([3, 5, 10], id: \.self) { Text("Every \($0) min").tag($0) }
+            HStack(spacing: 8) {
+                Text("Refresh every").font(.system(size: 12)).foregroundStyle(t.sub)
+                Picker("Refresh interval", selection: Binding(get: { state.intervalMinutes }, set: { commands.setInterval($0) })) {
+                    ForEach([3, 5, 10], id: \.self) { Text("\($0) min").tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden()
             }
-            .pickerStyle(.menu).labelsHidden().fixedSize().help("How often allowances are polled")
+            .padding(.leading, 8).fixedSize().help("How often allowances are polled")
         }
         ToolbarItem(placement: .primaryAction) {
             RefreshButton(action: { await commands.refreshLive() }) { angle in
@@ -278,6 +275,8 @@ private struct ManagerRowView: View {
     let theme: Theme
     let columns: Columns
     let commands: AccountCommands
+    /// Remove takes two clicks: the first arms it for a few seconds, the second deletes.
+    @State private var armed = false
 
     var body: some View {
         let t = theme
@@ -302,7 +301,15 @@ private struct ManagerRowView: View {
             column(row.groups.map { ($0.name, $0.sevenDay) }, t)
             HStack(spacing: 4) {
                 Spacer(minLength: 0)
-                if row.isLive {
+                if armed {
+                    PillButton(title: "Remove", fill: t.barLow) {
+                        armed = false
+                        Task { await commands.remove(row.id) }
+                    }
+                    .help("Click to delete this saved login").accessibilityLabel("Confirm removing \(row.email)")
+                    iconButton("xmark", help: "Keep this saved login", enabled: true, t) { armed = false }
+                        .accessibilityLabel("Cancel removing \(row.email)")
+                } else if row.isLive {
                     HStack(spacing: 5) {
                         Circle().fill(t.liveText).frame(width: 6, height: 6)
                         Text("Live").font(.system(size: 11.5, weight: .semibold))
@@ -314,15 +321,22 @@ private struct ManagerRowView: View {
                     }
                     .help(row.switchDisabledReason ?? "Switch \(tool.displayName) to \(row.email)")
                 }
-                RefreshButton(action: { await commands.refresh(row.id) }, active: row.isFetching) { angle in
-                    Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold)).rotationEffect(angle).frame(width: 26, height: 26)
+                if !armed {
+                    RefreshButton(action: { await commands.refresh(row.id) }, active: row.isFetching) { angle in
+                        Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold)).rotationEffect(angle).frame(width: 26, height: 26)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(t.sub).disabled(!row.refreshEnabled).opacity(row.refreshEnabled ? 1 : 0.35).help("Refresh this account")
+                    .accessibilityLabel("Refresh \(tool.displayName) \(row.email)")
+                    iconButton("trash", help: "Remove this saved login", enabled: row.isSaved, t) { armed = true }
+                        .accessibilityLabel("Remove \(row.email)")
                 }
-                .buttonStyle(.plain).foregroundStyle(t.sub).disabled(!row.refreshEnabled).opacity(row.refreshEnabled ? 1 : 0.35).help("Refresh this account")
-                .accessibilityLabel("Refresh \(tool.displayName) \(row.email)")
-                iconButton("trash", help: "Remove this saved login", enabled: row.isSaved, t) { Task { await commands.remove(row.id) } }
-                    .accessibilityLabel("Remove \(row.email)")
             }
             .frame(width: Columns.actions)
+            .task(id: armed) {
+                guard armed else { return }
+                try? await Task.sleep(for: .seconds(4))
+                if !Task.isCancelled { armed = false }
+            }
         }
         .padding(.horizontal, Columns.inset).padding(.vertical, 12)
         .background(row.isLive ? t.liveRow : .clear)
