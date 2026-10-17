@@ -2,15 +2,23 @@ import AppKit
 import MagpieLiteCore
 import SwiftUI
 
+/// The visible height (menu bar and Dock excluded) of the screen the popover opens on; set just before it opens.
+@MainActor @Observable final class PopoverScreen {
+    var visibleHeight: CGFloat = 800
+}
+
 /// The popover: header, notices, one card per tool, footer (ui/Main.dc.html).
 struct PopoverView: View {
     let state: AppState
     let commands: AccountCommands
+    let screen: PopoverScreen
     let openManager: () -> Void
 
     /// Tools whose other accounts are listed; kept until the app quits.
     @State private var expanded: Set<Tool> = []
     @State private var cardsHeight: CGFloat = 0
+    @State private var topHeight: CGFloat = 0
+    @State private var footerHeight: CGFloat = 0
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -24,9 +32,14 @@ struct PopoverView: View {
         let cards = Tool.allCases.map { tool in
             ToolCard.build(state.snapshot(tool).hidingMinorGroups, expanded: expanded.contains(tool), dismissedUnsavedKey: commands.dismissedUnsaved[tool], now: now)
         }
+        // The whole popover fits the screen: what's left after the header, notices, footer and the arrow's margin.
+        let maxCards = max(240, screen.visibleHeight - topHeight - footerHeight - 32)
         return VStack(spacing: 0) {
-            header(t, now: now)
-            notices(t, cards: cards)
+            VStack(spacing: 0) {
+                header(t, now: now)
+                notices(t, cards: cards)
+            }
+            .onGeometryChange(for: CGFloat.self, of: \.size.height) { topHeight = $0 }
             ScrollView {
                 VStack(spacing: 8) {
                     ForEach(cards, id: \.tool) { CardView(card: $0, theme: t, actions: actions(for: $0.tool)) }
@@ -34,9 +47,10 @@ struct PopoverView: View {
                 .padding(.horizontal, 10)
                 .background(GeometryReader { Color.clear.preference(key: HeightKey.self, value: $0.size.height) })
             }
-            .frame(height: min(max(cardsHeight, 1), 470))
+            .frame(height: min(max(cardsHeight, 1), maxCards))
             .onPreferenceChange(HeightKey.self) { cardsHeight = $0 }
             footer(t)
+                .onGeometryChange(for: CGFloat.self, of: \.size.height) { footerHeight = $0 }
         }
         .foregroundStyle(t.text)
     }

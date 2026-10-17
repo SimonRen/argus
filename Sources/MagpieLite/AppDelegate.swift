@@ -70,10 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AnyView(ManagerView(state: state, commands: commands, preferences: preferences, loginItem: loginItem))
         }, onClose: { commands.closeUndo() })
         let statusItem = StatusItemController(state: state, preferences: preferences)
-        let view = PopoverView(state: state, commands: commands, openManager: { [weak self] in self?.openManager() })
+        let screen = PopoverScreen()
+        let view = PopoverView(state: state, commands: commands, screen: screen, openManager: { [weak self] in self?.openManager() })
         let content = NSHostingController(rootView: view)
         content.sizingOptions = [.preferredContentSize]
-        statusItem.attach(popover: content) { [weak self] in self?.openManager() }
+        statusItem.attach(popover: content, screen: screen) { [weak self] in self?.openManager() }
         self.statusItem = statusItem
         poller.start()
     }

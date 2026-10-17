@@ -9,6 +9,7 @@ import Observation
     private let preferences: MenuBarPreferences
     private var appearanceObservation: NSKeyValueObservation?
     private var popover: NSPopover?
+    private var screen: PopoverScreen?
     private var openManager: () -> Void = {}
 
     init(state: AppState, preferences: MenuBarPreferences) {
@@ -28,11 +29,12 @@ import Observation
     }
 
     /// One transient popover hosting `content`; with no status item window, clicks open the manager instead.
-    func attach(popover content: NSViewController, openManager: @escaping () -> Void) {
+    func attach(popover content: NSViewController, screen: PopoverScreen, openManager: @escaping () -> Void) {
         let popover = NSPopover()
         popover.behavior = .transient
         popover.contentViewController = content
         self.popover = popover
+        self.screen = screen
         self.openManager = openManager
     }
 
@@ -51,6 +53,7 @@ import Observation
         // The popover's glass looks different until its window is key, which needs the app active when it opens;
         // the cooperative `activate()` can be refused here, leaving the inactive look until the first click.
         // known-ceiling: `activate(ignoringOtherApps:)` is marked to-be-deprecated → when it warns, find the replacement.
+        if let frame = (button.window?.screen ?? NSScreen.main)?.visibleFrame { screen?.visibleHeight = frame.height }
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
