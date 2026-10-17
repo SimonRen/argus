@@ -187,7 +187,8 @@ public enum PopoverText {
     /// The short-lived hint after a refresh that sent nothing.
     public static func refreshHint(_ deferral: RefreshDeferral, now: Date, timeZone: TimeZone) -> String {
         guard let tool = deferral.rateLimitedBy else {
-            return "Refreshed moments ago. Try again in \(max(1, Int(deferral.until.timeIntervalSince(now).rounded(.up)))) s."
+            let seconds = max(1, Int(deferral.until.timeIntervalSince(now).rounded(.up)))
+            return "Refreshed moments ago. Try again in " + (seconds < 90 ? "\(seconds) s." : "\((seconds + 59) / 60) min.")
         }
         let vendor = switch tool {
         case .claude: "Claude"

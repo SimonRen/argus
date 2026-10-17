@@ -73,7 +73,7 @@ import MagpieLiteCore
         #expect(cmds.hint == nil)
         rig.clock.advance(12)
         await cmds.refresh(testKey(a))
-        #expect(cmds.hint == "Refreshed moments ago. Try again in 48 s.")
+        #expect(cmds.hint == "Refreshed moments ago. Try again in 3 min.")
         #expect(rig.tags == ["a"])
     }
 

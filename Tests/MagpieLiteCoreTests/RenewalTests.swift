@@ -126,13 +126,13 @@ fileprivate func agyInner(_ envelope: VaultEnvelope?) -> [String: Any]? {
     }
 
     @Test func `REQ/F04-AC-4.c7 the live account is never renewed`() async throws {
-        let live = testLogin(.claude, "a", expiry: soon)
+        let live = testLogin(.claude, "a", expiry: Date(timeIntervalSince1970: 1_790_000_000 + 400))   // inside the 5 min window at 180 s
         let rig = try PollerRig(live: [.claude: [.signedIn(live)]], renewing: true) { request in
             isTokenRequest(request) ? claudeTokenOK("x") : okReply(request)
         }
         try await rig.save(live)
         await rig.poller.runBatch()
-        rig.clock.advance(60)
+        rig.clock.advance(180)
         await rig.poller.refresh(testKey(live))
         #expect(rig.tokenRequests.isEmpty)
         #expect(rig.tags == ["a", "a"])

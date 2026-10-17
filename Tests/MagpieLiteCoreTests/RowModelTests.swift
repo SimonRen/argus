@@ -182,6 +182,8 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
                 == "Refreshed moments ago. Try again in 48 s.")
         #expect(PopoverText.refreshHint(RefreshDeferral(until: until, rateLimitedBy: nil), now: until, timeZone: utc)
                 == "Refreshed moments ago. Try again in 1 s.")
+        #expect(PopoverText.refreshHint(RefreshDeferral(until: until, rateLimitedBy: nil), now: until - 168, timeZone: utc)
+                == "Refreshed moments ago. Try again in 3 min.")
         #expect(PopoverText.refreshHint(RefreshDeferral(until: until, rateLimitedBy: .claude), now: until - 300, timeZone: utc)
                 == "Claude is rate-limited. Next check at 14:00.")
         #expect(PopoverText.refreshHint(RefreshDeferral(until: until, rateLimitedBy: .codex), now: until - 300, timeZone: TimeZone(identifier: "Asia/Shanghai")!)

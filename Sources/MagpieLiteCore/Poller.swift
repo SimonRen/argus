@@ -40,9 +40,9 @@ public struct TaskSleeper: Sleeper {
     private var inFlight: [AccountKey: Task<Void, Never>] = [:]
     /// Accounts the running batch has yet to fetch, with the callers waiting for that fetch.
     private var queued: [AccountKey: [CheckedContinuation<Void, Never>]] = [:]
-    /// Per account: consecutive 429s, and when the last one came.
+    /// Per account: consecutive 429s, and when the latest backoff ends (polling stays slower for an hour after).
     private var strikes: [AccountKey: Int] = [:]
-    private var last429: [AccountKey: Date] = [:]
+    private var backoffEnd: [AccountKey: Date] = [:]
     /// When each account's last allowance request was sent.
     private var lastAttempt: [AccountKey: Date] = [:]
     /// The payload an account had when it was flagged; new bytes clear the flag.
@@ -68,7 +68,7 @@ public struct TaskSleeper: Sleeper {
         var reading: AllowanceReading?
         var rateLimitedUntil: Date?
         var strikes: Int?
-        var last429: Date?
+        var backoffEnd: Date?
         var lastAttempt: Date?
     }
 
@@ -80,7 +80,7 @@ public struct TaskSleeper: Sleeper {
             if let reading = r.reading { state.update(r.key) { $0.reading = reading; $0.stale = true } }
             if let until = r.rateLimitedUntil, until > now() { state.rateLimitedUntil[r.key] = until }
             strikes[r.key] = r.strikes
-            last429[r.key] = r.last429
+            backoffEnd[r.key] = r.backoffEnd
             lastAttempt[r.key] = r.lastAttempt
         }
     }
@@ -88,10 +88,10 @@ public struct TaskSleeper: Sleeper {
     // ponytail: rewrites every record per fetch and keeps removed accounts' records; fine for a handful of accounts.
     private func saveReadings() {
         guard let readingsFile else { return }
-        let keys = Set(state.status.keys).union(state.rateLimitedUntil.keys).union(strikes.keys).union(last429.keys).union(lastAttempt.keys)
+        let keys = Set(state.status.keys).union(state.rateLimitedUntil.keys).union(strikes.keys).union(backoffEnd.keys).union(lastAttempt.keys)
         let saved = keys.map { key in
             PollRecord(key: key, reading: state.status[key]?.reading, rateLimitedUntil: state.rateLimitedUntil[key],
-                       strikes: strikes[key], last429: last429[key], lastAttempt: lastAttempt[key])
+                       strikes: strikes[key], backoffEnd: backoffEnd[key], lastAttempt: lastAttempt[key])
         }
         try? JSONEncoder().encode(saved).write(to: readingsFile, options: .atomic)
     }
@@ -215,7 +215,7 @@ public struct TaskSleeper: Sleeper {
             if case .signedIn(let login) = live {
                 let key = AccountKey(tool: tool, id: login.identity.fileID)
                 liveKey = key
-                await fetchOnce(key, fromBatch: true) { await self.fetchLive(key, login) }
+                await fetchOnce(key, fromBatch: true) { await self.fetchLive(key, login, batch: true) }
                 done(key)
                 if tool == .claude { claudeBaseline = (login.bytes, login.claudeAccount) }
                 await syncBack(tool, seen: login, baseline: baseline)
@@ -223,7 +223,7 @@ public struct TaskSleeper: Sleeper {
             if let previousLive { done(previousLive) }
             for envelope in plan[tool]! {
                 let key = AccountKey(tool: tool, id: envelope.identity.fileID)
-                if key != liveKey { await fetchOnce(key, fromBatch: true) { await self.fetchSaved(key, envelope) } }
+                if key != liveKey { await fetchOnce(key, fromBatch: true) { await self.fetchSaved(key, envelope, batch: true) } }
                 done(key)
             }
         }
@@ -251,8 +251,8 @@ public struct TaskSleeper: Sleeper {
 
     // MARK: - Fetches
 
-    private func fetchLive(_ key: AccountKey, _ login: LiveLogin) async {
-        guard !skipFetch(key) else { return }
+    private func fetchLive(_ key: AccountKey, _ login: LiveLogin, batch: Bool = false) async {
+        guard !skipFetch(key, batch: batch) else { return }
         var token = login.tokens.accessToken
         if (login.tokens.accessTokenExpiry ?? .distantFuture) <= now().addingTimeInterval(key.tool == .agy ? 60 : 0) { token = nil }
         // agy only: an expired live token is replaced by one minted in memory; agy's own login is never written.
@@ -265,9 +265,9 @@ public struct TaskSleeper: Sleeper {
     }
 
     /// A saved, non-live account: renewed first when its token is due, and once more after a 401.
-    private func fetchSaved(_ key: AccountKey, _ envelope: VaultEnvelope) async {
+    private func fetchSaved(_ key: AccountKey, _ envelope: VaultEnvelope, batch: Bool = false) async {
         let flag = state.status[key]?.flag
-        guard flag != .needsSignIn, flag != .appNeedsUpdate, !skipFetch(key) else { return }
+        guard flag != .needsSignIn, flag != .appNeedsUpdate, !skipFetch(key, batch: batch) else { return }
         var envelope = envelope
         var tokens = envelope.payloadBytes.flatMap { tokenSet(key.tool, bytes: $0) }
         if let renewer, tokens?.accessToken == nil || (tokens?.accessTokenExpiry ?? .distantFuture) < now().addingTimeInterval(300) {
@@ -316,20 +316,30 @@ public struct TaskSleeper: Sleeper {
         state.update(key) { $0.flag = flag; $0.stale = true }
     }
 
-    /// The vendor is rate limited (the account goes stale), or the account was fetched under 60 s ago.
-    private func skipFetch(_ key: AccountKey) -> Bool {
-        guard let deferral = deferral(key) else { return false }
+    /// The account is backed off (it goes stale), or was asked for under its minimum gap ago.
+    private func skipFetch(_ key: AccountKey, batch: Bool) -> Bool {
+        guard let deferral = deferral(key, batch: batch) else { return false }
         if deferral.rateLimitedBy != nil { state.update(key) { $0.stale = true } }
         return true
     }
 
-    /// Nil when `key` may be fetched now.
-    private func deferral(_ key: AccountKey) -> RefreshDeferral? {
+    /// Nil when `key` may be fetched now. A batch may come up to 10% early, so its own timing drift never skips one.
+    private func deferral(_ key: AccountKey, batch: Bool = false) -> RefreshDeferral? {
         let now = now()
         if let until = state.rateLimitedUntil[key], now < until { return RefreshDeferral(until: until, rateLimitedBy: key.tool) }
+        let gap = minimumGap(key)
         guard let last = [lastAttempt[key], state.status[key]?.reading?.fetchedAt].compactMap({ $0 }).max(),
-              now.timeIntervalSince(last) < 60 else { return nil }
-        return RefreshDeferral(until: last.addingTimeInterval(60), rateLimitedBy: nil)
+              now.timeIntervalSince(last) < gap * (batch ? 0.9 : 1) else { return nil }
+        return RefreshDeferral(until: last.addingTimeInterval(gap), rateLimitedBy: nil)
+    }
+
+    /// The least time between two allowance requests for one account, manual refreshes included. Claude's usage
+    /// endpoint allows ~28–30 per account per sliding hour, shared by every client holding its tokens
+    /// (refs/claude-swap poll_policy.py): 180 s keeps one account near 20 an hour. For an hour after any account's
+    /// backoff ends, 360 s, so clients sharing it settle. Elsewhere 60 s (refs/magpie reuses readings for 1 min).
+    private func minimumGap(_ key: AccountKey) -> TimeInterval {
+        if let end = backoffEnd[key], now() < end.addingTimeInterval(3600) { return 360 }
+        return key.tool == .claude ? 180 : 60
     }
 
     // MARK: - Poll-time sync-back
@@ -370,8 +380,9 @@ public struct TaskSleeper: Sleeper {
         case .rateLimited(let retryAfter):
             let strike = (strikes[key] ?? 0) + 1
             strikes[key] = strike
-            last429[key] = now()
-            state.rateLimitedUntil[key] = now().addingTimeInterval(RateLimitPolicy.nextDelay(strike: strike, retryAfter: retryAfter))
+            let until = now().addingTimeInterval(RateLimitPolicy.nextDelay(strike: strike, retryAfter: retryAfter))
+            backoffEnd[key] = until
+            state.rateLimitedUntil[key] = until
             state.update(key) { $0.stale = true; $0.error = "rate limited" }
         }
         saveReadings()

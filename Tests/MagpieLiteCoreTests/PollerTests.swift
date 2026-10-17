@@ -77,8 +77,11 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(rig.count("b") == 1 && rig.count("a") == 2 && rig.state.status[testKey(a)]?.stale == false)
         rig.clock.advance(101)
         await rig.poller.runBatch()
+        #expect(rig.count("b") == 1)
+        rig.clock.advance(100)
+        await rig.poller.runBatch()
         #expect(rig.count("b") == 2 && rig.state.rateLimitedUntil[testKey(b)] == rig.clock.now + 300)
-        rig.clock.advance(301)
+        rig.clock.advance(400)
         await rig.poller.runBatch()
         #expect(rig.count("b") == 3 && rig.state.rateLimitedUntil[testKey(b)] == nil && rig.state.status[testKey(b)]?.stale == false)
     }
@@ -162,26 +165,30 @@ fileprivate final class Concurrency: @unchecked Sendable {
         rig.clock.advance(30)
         await rig.poller.refreshLive()
         await rig.poller.refresh(testKey(g))
-        rig.clock.advance(29)
+        rig.clock.advance(20)
         await rig.poller.runBatch()
         #expect(rig.tags == ["e", "g"])
-        rig.clock.advance(2)
+        rig.clock.advance(11)
         await rig.poller.refreshLive()
         #expect(rig.tags == ["e", "g", "e"])
     }
 
-    @Test func `REQ/F04-AC-4.c16 any account fetched under 60 s ago, even unsuccessfully, is not sent again and the refresh says until when`() async throws {
+    @Test func `REQ/F04-AC-4.c16 a Claude account asked for under 180 s ago, even unsuccessfully, is not sent again and the refresh says until when`() async throws {
         let replies = ReplyScript([.json(503, "busy"), .json(200, claudeUsageOK)])
         let a = testLogin(.claude, "a")
         let rig = try PollerRig(live: [.claude: [.signedIn(a)]]) { _ in replies.next() }
         let start = rig.clock.now
         await rig.poller.runBatch()
         rig.clock.advance(10)
-        #expect(await rig.poller.refreshLive() == RefreshDeferral(until: start + 60, rateLimitedBy: nil))
-        #expect(await rig.poller.refresh(testKey(a)) == RefreshDeferral(until: start + 60, rateLimitedBy: nil))
+        #expect(await rig.poller.refreshLive() == RefreshDeferral(until: start + 180, rateLimitedBy: nil))
+        #expect(await rig.poller.refresh(testKey(a)) == RefreshDeferral(until: start + 180, rateLimitedBy: nil))
         #expect(rig.tags == ["a"])
         #expect(rig.state.lastLiveFetch == start)
-        rig.clock.advance(50)
+        rig.clock.advance(150)
+        #expect(await rig.poller.refreshLive() != nil)
+        await rig.poller.runBatch()
+        #expect(rig.tags == ["a"])
+        rig.clock.advance(20)
         #expect(await rig.poller.refreshLive() == nil)
         #expect(rig.tags == ["a", "a"])
         #expect(rig.state.lastLiveFetch == rig.clock.now)
@@ -230,6 +237,24 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(rig.state.fetching.isEmpty)
     }
 
+    @Test func `for an hour after a backoff ends an account is asked at most every 360 s, then every 180 s again`() async throws {
+        let replies = ReplyScript([.json(429, "{}"), .json(200, claudeUsageOK)])
+        let a = testLogin(.claude, "a")
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]]) { _ in replies.next() }
+        let start = rig.clock.now
+        await rig.poller.runBatch()
+        #expect(rig.state.rateLimitedUntil[testKey(a)] == start + 300)
+        rig.clock.advance(360)
+        #expect(await rig.poller.refresh(testKey(a)) == nil)
+        rig.clock.advance(200)
+        #expect(await rig.poller.refresh(testKey(a)) == RefreshDeferral(until: start + 720, rateLimitedBy: nil))
+        rig.clock.advance(3600)
+        #expect(await rig.poller.refresh(testKey(a)) == nil)
+        rig.clock.advance(170)
+        #expect(await rig.poller.refresh(testKey(a)) == RefreshDeferral(until: rig.clock.now + 10, rateLimitedBy: nil))
+        #expect(rig.count("a") == 3)
+    }
+
     // MARK: F04-AC-4.c19
 
     @Test func `REQ/F04-AC-4.c19 Refresh live accounts fetches only live logins and leaves the interval timer alone`() async throws {
@@ -239,7 +264,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
         rig.poller.start()
         #expect(await eventually { rig.sleeper.durations.count == 1 })
         let before = rig.tags
-        rig.clock.advance(120)
+        rig.clock.advance(180)
         await rig.poller.refreshLive()
         #expect(Array(rig.tags.dropFirst(before.count)) == ["a", "f"])
         #expect(rig.sleeper.durations.count == 1)
