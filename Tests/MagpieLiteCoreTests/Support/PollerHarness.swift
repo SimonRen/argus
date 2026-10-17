@@ -148,7 +148,9 @@ func eventually(_ condition: @Sendable () -> Bool) async -> Bool {
     let renewer: Renewer?
     let poller: Poller
 
-    init(live: [Tool: [LiveState]] = [:], renewing: Bool = false, persistReadings: Bool = false,
+    let pacer: ClockSleeper
+
+    init(live: [Tool: [LiveState]] = [:], renewing: Bool = false, persistReadings: Bool = false, spacing: TimeInterval = 0,
          reply: @escaping @Sendable (TestHTTPStub.Request) async -> TestHTTPStub.Reply = okReply) throws {
         box = try TestSandbox(security: ScriptedSecurity([.timedOut]))
         vault = try Vault(supportRoot: box.supportRoot)
@@ -161,8 +163,9 @@ func eventually(_ condition: @Sendable () -> Bool) async -> Bool {
         let adapters = Tool.allCases.map { fakes[$0]! as any ToolAdapter }
         renewer = renewing ? Renewer(http: http, tools: adapters, now: clock.closure) : nil
         let fetcher = AllowanceFetcher(http: http, version: "0.1.0", now: clock.closure)
+        pacer = ClockSleeper(clock)
         poller = Poller(state: state, tools: adapters, vault: vault, fetcher: fetcher, sleeper: sleeper, now: clock.closure, renewer: renewer,
-                        readingsFile: persistReadings ? box.supportRoot.appending(path: "readings.json") : nil)
+                        readingsFile: persistReadings ? box.supportRoot.appending(path: "readings.json") : nil, spacing: spacing, pacer: pacer)
     }
 
     @discardableResult
@@ -187,4 +190,17 @@ final class ReplyScript: @unchecked Sendable {
     private var replies: [TestHTTPStub.Reply]
     init(_ replies: [TestHTTPStub.Reply]) { self.replies = replies }
     func next() -> TestHTTPStub.Reply { lock.withLock { replies.count > 1 ? replies.removeFirst() : replies[0] } }
+}
+
+/// Advances the test clock by each requested sleep and records it; never blocks.
+final class ClockSleeper: Sleeper, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [Duration] = []
+    let clock: TestClock
+    init(_ clock: TestClock) { self.clock = clock }
+    var durations: [Duration] { lock.withLock { recorded } }
+    func sleep(for duration: Duration) async throws {
+        lock.withLock { recorded.append(duration) }
+        clock.advance(Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18)
+    }
 }

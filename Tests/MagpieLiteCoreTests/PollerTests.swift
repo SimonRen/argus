@@ -255,6 +255,39 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(rig.count("a") == 3)
     }
 
+    @Test func `usage requests to one vendor go one at a time, spaced apart; other vendors are not held`() async throws {
+        let a = testLogin(.claude, "a"), b = testLogin(.claude, "b"), c = testLogin(.claude, "c"), x = testLogin(.codex, "x")
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)], .codex: [.signedIn(x)]], spacing: 2)
+        try await rig.save(b)
+        try await rig.save(c)
+        await rig.poller.runBatch()
+        #expect(rig.tags.filter { ["a", "b", "c"].contains($0) } == ["a", "b", "c"] || rig.tags.filter { ["a", "b", "c"].contains($0) } == ["a", "c", "b"])
+        #expect(rig.pacer.durations == [.seconds(2), .seconds(2)])
+        #expect(rig.count("x") == 1)
+    }
+
+    @Test func `two refreshes of one vendor's accounts never overlap`() async throws {
+        let gate = TestGate()
+        let a = testLogin(.claude, "a"), b = testLogin(.claude, "b")
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]], spacing: 2) { request in
+            if requestTag(request) == "a" { await gate.wait() }
+            return okReply(request)
+        }
+        try await rig.save(a)
+        try await rig.save(b)
+        await rig.poller.reloadVault()
+        let first = Task { await rig.poller.refresh(testKey(a)) }
+        #expect(await eventually { rig.stub.requests.count == 1 })
+        let second = Task { await rig.poller.refresh(testKey(b)) }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(rig.stub.requests.count == 1)
+        await gate.release()
+        _ = await first.value
+        _ = await second.value
+        #expect(rig.tags == ["a", "b"])
+        #expect(rig.pacer.durations == [.seconds(2)])
+    }
+
     // MARK: F04-AC-4.c19
 
     @Test func `REQ/F04-AC-4.c19 Refresh live accounts fetches only live logins and leaves the interval timer alone`() async throws {

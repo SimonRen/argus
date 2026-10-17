@@ -34,6 +34,9 @@ public struct TaskSleeper: Sleeper {
     /// Per account: the last reading, backoff and attempt, kept across launches so a relaunch neither shows dashes
     /// nor hits a blocked account again; nil keeps them in memory only.
     let readingsFile: URL?
+    /// Usage requests to one vendor go one at a time, at least this far apart (from the previous one's end).
+    let spacing: TimeInterval
+    let pacer: any Sleeper
 
     private var loop: Task<Void, Never>?
     private var batch: Task<Void, Never>?
@@ -41,6 +44,9 @@ public struct TaskSleeper: Sleeper {
     /// Accounts the running batch has yet to fetch, with the callers waiting for that fetch.
     private var queued: [AccountKey: [CheckedContinuation<Void, Never>]] = [:]
     /// Per account: consecutive 429s, and when the latest backoff ends (polling stays slower for an hour after).
+    /// Per vendor: the end of the request queue, and when its last request finished.
+    private var vendorTail: [Tool: Task<Void, Never>] = [:]
+    private var lastSent: [Tool: Date] = [:]
     private var strikes: [AccountKey: Int] = [:]
     private var backoffEnd: [AccountKey: Date] = [:]
     /// When each account's last allowance request was sent.
@@ -51,7 +57,8 @@ public struct TaskSleeper: Sleeper {
     private var claudeBaseline: (bytes: Data, account: Data?)?
 
     public init(state: AppState, tools: [any ToolAdapter], vault: Vault, fetcher: AllowanceFetcher,
-                sleeper: any Sleeper, now: @escaping @Sendable () -> Date, renewer: Renewer? = nil, readingsFile: URL? = nil) {
+                sleeper: any Sleeper, now: @escaping @Sendable () -> Date, renewer: Renewer? = nil, readingsFile: URL? = nil,
+                spacing: TimeInterval = 0, pacer: any Sleeper = TaskSleeper()) {
         self.state = state
         self.tools = Dictionary(tools.map { ($0.tool, $0) }, uniquingKeysWith: { first, _ in first })
         self.vault = vault
@@ -60,6 +67,8 @@ public struct TaskSleeper: Sleeper {
         self.now = now
         self.renewer = renewer
         self.readingsFile = readingsFile
+        self.spacing = spacing
+        self.pacer = pacer
         loadReadings()
     }
 
@@ -261,7 +270,7 @@ public struct TaskSleeper: Sleeper {
         }
         guard let token else { return state.update(key) { $0.stale = true } }
         lastAttempt[key] = now()
-        apply(await fetcher.fetch(key.tool, accountKey: key.id, accessToken: token, accountID: login.accountID), to: key)
+        apply(await paced(key.tool) { await self.fetcher.fetch(key.tool, accountKey: key.id, accessToken: token, accountID: login.accountID) }, to: key)
     }
 
     /// A saved, non-live account: renewed first when its token is due, and once more after a 401.
@@ -277,11 +286,12 @@ public struct TaskSleeper: Sleeper {
             return state.update(key) { $0.stale = true }
         }
         lastAttempt[key] = now()
-        var result = await fetcher.fetch(key.tool, accountKey: key.id, accessToken: token, accountID: envelope.accountID)
+        let accountID = envelope.accountID
+        var result = await paced(key.tool) { await self.fetcher.fetch(key.tool, accountKey: key.id, accessToken: token, accountID: accountID) }
         if result == .unauthorized, let renewer {
             guard await renew(key, .unauthorized(accessToken: token), renewer, &envelope, &tokens) else { return }
             if let fresh = tokens?.accessToken, fresh != token {
-                result = await fetcher.fetch(key.tool, accountKey: key.id, accessToken: fresh, accountID: envelope.accountID)
+                result = await paced(key.tool) { await self.fetcher.fetch(key.tool, accountKey: key.id, accessToken: fresh, accountID: accountID) }
             }
         }
         apply(result, to: key)
@@ -314,6 +324,22 @@ public struct TaskSleeper: Sleeper {
     private func mark(_ key: AccountKey, _ flag: AccountFlag, payload: String) {
         flaggedPayload[key] = payload
         state.update(key) { $0.flag = flag; $0.stale = true }
+    }
+
+    /// Runs `send` after every earlier usage request to `tool` has finished and `spacing` has passed since the last.
+    private func paced(_ tool: Tool, _ send: @escaping @MainActor () async -> FetchResult) async -> FetchResult {
+        let previous = vendorTail[tool]
+        let request = Task { () -> FetchResult in
+            await previous?.value
+            if let last = lastSent[tool], case let wait = spacing - now().timeIntervalSince(last), wait > 0 {
+                try? await pacer.sleep(for: .seconds(wait))
+            }
+            let result = await send()
+            lastSent[tool] = now()
+            return result
+        }
+        vendorTail[tool] = Task { _ = await request.value }
+        return await request.value
     }
 
     /// The account is backed off (it goes stale), or was asked for under its minimum gap ago.
