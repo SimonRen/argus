@@ -2,25 +2,25 @@
 import PackageDescription
 
 let package = Package(
-    name: "MagpieLite",
+    name: "Argus",
     platforms: [.macOS(.v26)],
     products: [
-        .executable(name: "MagpieLite", targets: ["MagpieLite"]),
+        .executable(name: "Argus", targets: ["Argus"]),
     ],
     targets: [
         .target(
-            name: "MagpieLiteCore",
-            path: "Sources/MagpieLiteCore"
+            name: "ArgusCore",
+            path: "Sources/ArgusCore"
         ),
         .executableTarget(
-            name: "MagpieLite",
-            dependencies: ["MagpieLiteCore"],
-            path: "Sources/MagpieLite"
+            name: "Argus",
+            dependencies: ["ArgusCore"],
+            path: "Sources/Argus"
         ),
         .testTarget(
-            name: "MagpieLiteCoreTests",
-            dependencies: ["MagpieLiteCore"],
-            path: "Tests/MagpieLiteCoreTests"
+            name: "ArgusCoreTests",
+            dependencies: ["ArgusCore"],
+            path: "Tests/ArgusCoreTests"
         ),
     ],
     swiftLanguageModes: [.v6]

@@ -2,16 +2,16 @@ SCRATCH ?= .build
 OUT ?= build
 SIGN ?= -
 
-APP := $(OUT)/MagpieLite.app
-INSTALLED := $(HOME)/Applications/MagpieLite.app
+APP := $(OUT)/Argus.app
+INSTALLED := $(HOME)/Applications/Argus.app
 
 .PHONY: build test check install run clean
 
 build:
-	swift build -c release --scratch-path "$(SCRATCH)" --product MagpieLite
+	swift build -c release --scratch-path "$(SCRATCH)" --product Argus
 	rm -rf "$(APP)"
 	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources"
-	cp "$$(swift build -c release --scratch-path "$(SCRATCH)" --show-bin-path)/MagpieLite" "$(APP)/Contents/MacOS/MagpieLite"
+	cp "$$(swift build -c release --scratch-path "$(SCRATCH)" --show-bin-path)/Argus" "$(APP)/Contents/MacOS/Argus"
 	cp Resources/AppIcon.icns "$(APP)/Contents/Resources/AppIcon.icns"
 	cp Resources/ToolIcons/* "$(APP)/Contents/Resources/"
 	cp Resources/Info.plist "$(APP)/Contents/Info.plist"

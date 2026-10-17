@@ -318,6 +318,8 @@ Candidate scope: create `Sources/MagpieLite/LaunchAtLogin.swift`
   - Switch, refusal and failure notices show at once (the live refresh follows), problems are styled as problems, and the manager shows the switch notice with Restart. Only the latest app-server restart reports.
   - An error detail carries the vendor's message field only, never raw body bytes (FR-04.14).
   - A UTF-8 byte-order mark in `~/.claude.json` is skipped by the splice. Excluding the vault from backups is best effort. A support folder that can't be opened is reported instead of quitting silently.
+- 2026-10-17 — **Renamed Argus (owner-approved)**: the app, bundle id (`io.github.simonren.Argus`), Swift targets (`Argus`, `ArgusCore`) and support folder (`~/Library/Application Support/Argus`) take the new name. The first launch moves the former `MagpieLite` folder (the vault) over and copies the former settings where unset. The usage requests' User-Agent is `argus/<version>`.
+- 2026-10-17 — The menubar shows only each live account's 7 d used (the manager sidebar keeps 5 h and 7 d). The manager's title row is the window's own toolbar: title with a "Live updated" subtitle, then an interval pop-up, refresh, and launch at login, with a login-item error shown as a banner.
 
 ## Open questions
 Mirrors `frontier.md`: none — every branch is terminal; no deferred or fog rows.

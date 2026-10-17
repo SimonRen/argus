@@ -1,6 +1,6 @@
 # Keep saved logins as one owner-only file per account, payload stored as raw bytes
 
-Saved logins live in `~/Library/Application Support/MagpieLite/vault/<tool>/<id>.json`, one file per account, mode 0600 in 0700 folders excluded from backup. `<id>` is the SHA-256 hex of a canonical identity string; the tool's credential is stored as base64 of the exact bytes read from the tool's live store. Every write is a staged `O_EXCL` 0600 file, `F_FULLFSYNC`, a clone of the old file to `.prev`, then `rename(2)`. A file that fails validation is unknown and is never written over. (tech-design §3)
+Saved logins live in `~/Library/Application Support/Argus/vault/<tool>/<id>.json` (`MagpieLite` before the rename), one file per account, mode 0600 in 0700 folders excluded from backup. `<id>` is the SHA-256 hex of a canonical identity string; the tool's credential is stored as base64 of the exact bytes read from the tool's live store. Every write is a staged `O_EXCL` 0600 file, `F_FULLFSYNC`, a clone of the old file to `.prev`, then `rename(2)`. A file that fails validation is unknown and is never written over. (tech-design §3)
 
 ## Why
 

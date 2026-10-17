@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleExecutable</key>
-	<string>MagpieLite</string>
+	<string>Argus</string>
 	<key>CFBundleIdentifier</key>
-	<string>io.github.simonren.MagpieLite</string>
+	<string>io.github.simonren.Argus</string>
 	<key>CFBundleName</key>
-	<string>MagpieLite</string>
+	<string>Argus</string>
 	<key>CFBundleDisplayName</key>
-	<string>Magpie Lite</string>
+	<string>Argus</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
