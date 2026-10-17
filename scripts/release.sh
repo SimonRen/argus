@@ -46,7 +46,8 @@ grep -qF "## [$VERSION] - " CHANGELOG.md || fail "CHANGELOG.md has no [$VERSION]
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && fail "$TAG is already tagged; a new release needs a new version."
 # A release is rebuilt from a commit, never from uncommitted bytes.
 [[ -z "$(git status --porcelain)" ]] || fail "the working tree has uncommitted changes; commit or stash them first."
-security find-identity -v -p codesigning | grep -qF "\"$SIGN_ID\"" || fail "signing identity \"$SIGN_ID\" is not in the keychain."
+# Piped greps read to the end (no -q): under pipefail, -q's early exit fails the writer with SIGPIPE and the pipeline.
+security find-identity -v -p codesigning | grep -F "\"$SIGN_ID\"" >/dev/null || fail "signing identity \"$SIGN_ID\" is not in the keychain."
 
 DMG="$RELEASES/Argus-v${VERSION}.dmg"
 echo "=== Argus v$VERSION (build $BUILD) — signed, notarized DMG ==="
@@ -66,11 +67,11 @@ echo "→ Verifying…"
 [[ "$(lipo -archs "$APP/Contents/MacOS/Argus")" == "arm64" ]] || fail "the binary is not arm64 only: $(lipo -archs "$APP/Contents/MacOS/Argus")"
 codesign --verify --deep --strict --verbose=2 "$APP"
 codesign -dv --verbose=2 "$APP" 2>&1 | grep -E "^(Authority|TeamIdentifier|Identifier|Runtime Version)=|flags=" || true
-codesign -dv "$APP" 2>&1 | grep -q "flags=.*runtime" || fail "the hardened runtime is not on."
+codesign -dv "$APP" 2>&1 | grep "flags=.*runtime" >/dev/null || fail "the hardened runtime is not on."
 STAMPED="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 [[ "$STAMPED" == "$VERSION" ]] || fail "the bundle says $STAMPED, not $VERSION."
 # Notarization rejects a binary carrying get-task-allow.
-if codesign -d --entitlements - "$APP" 2>/dev/null | grep -q "get-task-allow"; then
+if codesign -d --entitlements - "$APP" 2>/dev/null | grep "get-task-allow" >/dev/null; then
   fail "the binary carries com.apple.security.get-task-allow; notarization would reject it."
 fi
 
