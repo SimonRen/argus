@@ -193,13 +193,15 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
         #expect(AccountRowProbe(account("u@example.com", reading: reading([("", 45, 90)]), tool: .agy)).row.groups.map(\.name) == [nil])
     }
 
-    @Test func `popover table columns come from every row and name a window by its group, except Claude's account-wide first group`() {
+    @Test func `popover table columns come from every row, the first group plain and later ones named against it`() {
         func labels(_ groups: [(String, Double?, Double?)], _ tool: Tool) -> [String] {
             AccountRowProbe(account("x@example.com", reading: reading(groups), tool: tool)).row.windows.map(\.label)
         }
         #expect(labels([("All models", 84, 9), ("Fable", nil, 80)], .claude) == ["5h", "7d", "Fable 7d"])
         #expect(labels([("", 45, 90)], .codex) == ["5h", "7d"])
-        #expect(labels([("Gemini", 45, 90), ("Claude & GPT", nil, 95)], .agy) == ["Gemini 5h", "Gemini 7d", "Claude & GPT 7d"])
+        #expect(labels([("Gemini", 45, 90), ("Gemini 4 Argon", nil, 76)], .agy) == ["5h", "7d", "Argon 7d"])
+        #expect(labels([("Gemini", 45, 90)], .agy) == ["5h", "7d"])
+        #expect(labels([("Gemini", 45, 90), ("Claude & GPT", nil, 95)], .agy) == ["5h", "7d", "Claude & GPT 7d"])
         let pro = account("a@example.com", live: true, reading: reading([("All models", 84, 9)]))
         let maxPlan = account("b@example.com", reading: reading([("All models", 50, 50), ("Fable", nil, 80)]))
         let claude = card(snapshot([pro, maxPlan, account("c@example.com")]))
@@ -210,7 +212,7 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
         #expect(card(snapshot([account("u@example.com", live: true)])).columns == ["5h", "7d"])
     }
 
-    @Test func `a blocked or never-fetched popover row spans the columns with one box, other badges stay beside the plan`() {
+    @Test func `a blocked or never-fetched popover row spans the columns with one box, only Kept stays beside the plan and a stale age shows in the manager only`() {
         let fresh = AccountRowProbe(account("f@example.com", reading: reading([("", 50, 50)]))).row
         #expect(fresh.banner == nil && fresh.inlineBadges.isEmpty)
         #expect(AccountRowProbe(account("n@example.com")).row.banner == .notFetched)
@@ -219,7 +221,7 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
         let blocked = AccountRowProbe(account("s@example.com", kept: true, flag: .needsSignIn, reading: reading([("", 50, 50)]))).row
         #expect(blocked.banner == .blocked("Needs sign-in") && blocked.inlineBadges == [.kept])
         let stale = AccountRowProbe(account("o@example.com", reading: reading([("", 50, 50)], at: now - 120), stale: true)).row
-        #expect(stale.banner == nil && stale.inlineBadges == [.stale("2 min ago")])
+        #expect(stale.banner == nil && stale.inlineBadges.isEmpty && stale.badges == [.stale("2 min ago")])
     }
 
     @Test func `the popover row shows the email before its @, and the plan with live under it`() {

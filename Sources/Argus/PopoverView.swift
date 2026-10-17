@@ -270,10 +270,7 @@ struct RowView: View {
     }
 
     @ViewBuilder private func badges(_ t: Theme) -> some View {
-        let problem = PopoverText.problem(tool: tool, error: row.error, retryAt: row.retryAt, now: .now, timeZone: .current)
-        ForEach(Array(row.inlineBadges.enumerated()), id: \.offset) {
-            BadgeView(badge: $0.element, theme: t, help: $0.element.isFetchProblem ? problem : nil)
-        }
+        ForEach(Array(row.inlineBadges.enumerated()), id: \.offset) { BadgeView(badge: $0.element, theme: t) }
     }
 }
 

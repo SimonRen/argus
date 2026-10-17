@@ -127,9 +127,17 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
                                 fiveHour: WindowCell(label: "5h", window: g.fiveHour, resetText: fiveReset),
                                 sevenDay: WindowCell(label: "7d", window: g.sevenDay, resetText: PopoverText.resetText(g.sevenDay, now: now)))
             }
-        // Claude's first group covers every model, so its columns read plain "5h" / "7d"; agy's groups are model families, all named.
+        // The first group is the account's base ("All models", agy's "Gemini"), so its columns read plain "5h" / "7d"; a later group
+        // is named against it, a leading version dropped: "Fable 7d", and "Gemini 4 Argon" beside "Gemini" → "Argon 7d".
+        let base = readingGroups.first?.name.split(separator: " ") ?? []
+        func short(_ name: String) -> String {
+            var words = name.split(separator: " ")[...]
+            if words.starts(with: base) { words = words.dropFirst(base.count) }
+            while let word = words.first, word.allSatisfy(\.isNumber) { words = words.dropFirst() }
+            return words.isEmpty ? name : words.joined(separator: " ")
+        }
         windows = readingGroups.enumerated().flatMap { i, g in
-            let prefix = (i > 0 || account.key.tool == .agy) && !g.name.isEmpty ? g.name + " " : ""
+            let prefix = i > 0 && !g.name.isEmpty ? short(g.name) + " " : ""
             return [("5h", g.fiveHour), ("7d", g.sevenDay)].compactMap { label, window in
                 window.map { WindowCell(label: prefix + label, window: $0, resetText: PopoverText.resetText($0, now: now)) }
             }
@@ -148,10 +156,9 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
         [plan.flatMap { $0.isEmpty ? nil : $0.capitalized }, isLive ? "live" : nil].compactMap { $0 }.joined(separator: " · ")
     }
 
-    /// The badges the popover keeps beside the plan; the rest show as the `banner`.
-    public var inlineBadges: [RowBadge] {
-        badges.filter { if case .stale = $0 { true } else { $0 == .kept } }
-    }
+    /// The badges the popover keeps beside the plan: only "Kept". Blocked and never-fetched show as the `banner`; a stale reading's
+    /// age shows in the manager only.
+    public var inlineBadges: [RowBadge] { badges.filter { $0 == .kept } }
 
     /// One cell per column of the card's table: the window, "—" over "none" for a window this account lacks, "—" throughout with no reading.
     public func cells(_ columns: [String]) -> [WindowCell] {

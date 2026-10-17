@@ -6,6 +6,15 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+### Changed
+
+- Popover rows no longer show how long ago an account was last fetched; the manager still does.
+
+### Fixed
+
+- Antigravity's Gemini 4 Argon weekly limit shows, as its own "Argon 7d" column, and Antigravity's columns read 5h and
+  7d like Claude Code's instead of "Gemini 5h" and "Gemini 7d".
+
 ## [0.2.0] - 2026-10-17
 
 ### Changed

@@ -97,6 +97,16 @@ fileprivate func fetcher(_ stub: TestHTTPStub, timeout: TimeInterval = HTTPClien
         #expect(groups[1].sevenDay == AllowanceWindow(remaining: 0, resetsAt: iso("2099-01-06T00:00:00Z")))
     }
 
+    @Test func `REQ/F04-AC-4.c3 agy's Gemini 4 Argon group is its own weekly-only group`() throws {
+        // The group as retrieveUserQuotaSummary returns it to agy CLI 1.4.0's User-Agent.
+        let argon = #"{"displayName":"Gemini 4 Argon","description":"For paid Pro plans, Argon quota is separate. Higher Argon quota (included as part of the larger Gemini quota bucket) is available on Ultra plans.","buckets":[{"bucketId":"gemini-argon-wtu-weekly","displayName":"Gemini 4 Argon Weekly Limit","window":"weekly","resetTime":"2026-10-24T03:09:01Z","description":"You have used some of your weekly limit, it will fully refresh in 6 days, 12 hours.","remainingFraction":0.76037866}]}"#
+        let body = agyFixture.replacingOccurrences(of: "}]}]}", with: "}]}," + argon + "]}")
+        let groups = try AllowanceParser.agy(Data(body.utf8))
+        #expect(groups.map(\.name) == ["Gemini", "Claude and GPT", "Gemini 4 Argon"])
+        #expect(groups[2].fiveHour == nil && abs(groups[2].sevenDay!.remaining - 76.037866) < 0.0001)
+        #expect(groups[2].sevenDay!.resetsAt == iso("2026-10-24T03:09:01Z"))
+    }
+
     @Test func `REQ/F04-AC-4.c3 agy infers windows from bucket names and accepts nested fractions and wrapped groups`() throws {
         let body = #"{"response":{"groups":[{"name":"Models","buckets":[{"bucketId":"models_five_hour","remaining":{"remainingFraction":0.5}},{"displayName":"Weekly limit","remaining":{"case":"remainingFraction","value":0.25}},{"bucketId":"daily","remainingFraction":0.1}]},{"displayName":"Other","buckets":[{"bucketId":"x-session","remainingFraction":1.4},{"bucketId":"y-5-hour","remainingFraction":0.3}]}]}}"#
         let groups = try AllowanceParser.agy(Data(body.utf8))
@@ -187,7 +197,7 @@ fileprivate func fetcher(_ stub: TestHTTPStub, timeout: TimeInterval = HTTPClien
         #expect(try JSONSerialization.jsonObject(with: requests[0].body) as? NSDictionary == ["metadata": ["ideType": "ANTIGRAVITY"]])
         #expect(try JSONSerialization.jsonObject(with: requests[1].body) as? NSDictionary == ["project": "proj-1"])
         for request in requests {
-            #expect(request.header("User-Agent") == "antigravity/hub/2.9.1 darwin/arm64")
+            #expect(request.header("User-Agent") == "antigravity/cli/1.4.0 darwin/arm64")
             #expect(request.header("Authorization") == "Bearer test-access-1")
             #expect(request.header("Content-Type") == "application/json")
         }

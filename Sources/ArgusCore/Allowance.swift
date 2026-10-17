@@ -200,7 +200,9 @@ public actor AllowanceFetcher {
     static let codexURL = URL(string: "https://chatgpt.com/backend-api/wham/usage")!
     static let agyLoadURL = URL(string: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist")!
     static let agyQuotaURL = URL(string: "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary")!
-    static let agyUserAgent = "antigravity/hub/2.9.1 darwin/arm64"
+    /// The quota summary's groups depend on it: the hub's `antigravity/hub/2.9.1` gets no Gemini 4 Argon group.
+    /// ponytail: pinned to agy CLI 1.4.0 → read the installed agy's version once a newer one is needed.
+    static let agyUserAgent = "antigravity/cli/1.4.0 darwin/arm64"
 
     public init(http: HTTPClient, version: String, now: @escaping @Sendable () -> Date) {
         self.http = http
