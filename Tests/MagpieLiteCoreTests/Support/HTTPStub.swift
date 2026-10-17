@@ -43,8 +43,9 @@ final class TestHTTPStub: @unchecked Sendable {
     }
 
     deinit {
+        // The session stays valid: work a test left running (a poller batch after `stop()`) may still send, and an
+        // unregistered token makes the request fail instead of trapping on an invalidated session.
         StubRegistry.shared.remove(token)
-        session.invalidateAndCancel()
     }
 
     var requests: [Request] { lock.withLock { recorded } }

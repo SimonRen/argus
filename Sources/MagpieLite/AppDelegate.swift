@@ -4,7 +4,9 @@ import MagpieLiteCore
 @main
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var statusItem: NSStatusItem?
+    private var instanceLock: InstanceLock?
+    private var poller: Poller?
+    private var statusItem: StatusItemController?
 
     static func main() {
         let delegate = AppDelegate()
@@ -18,13 +20,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = Self.makeMainMenu()
 
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = item.button {
-            button.image = Self.glyph()
-            button.imageScaling = .scaleNone
-            button.setAccessibilityLabel("Magpie Lite")
+        let fm = FileManager.default
+        let supportRoot = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "MagpieLite", directoryHint: .isDirectory)
+        guard let lock = InstanceLock.acquire(supportRoot: supportRoot) else {
+            // Another copy already runs and owns the vault.
+            NSApp.terminate(nil)
+            return
         }
-        statusItem = item
+        instanceLock = lock
+
+        let home = fm.homeDirectoryForCurrentUser
+        // known-ceiling: a Finder-launched app does not see a shell-only CODEX_HOME → when the owner sets one.
+        let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
+            ?? home.appending(path: ".codex", directoryHint: .isDirectory)
+        let env = ToolEnvironment(home: home, codexHome: codexHome, user: NSUserName(), keychain: .login, security: SecurityCLI())
+        let vault: Vault
+        do {
+            vault = try Vault(supportRoot: supportRoot)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Magpie Lite can't open its vault"
+            alert.informativeText = "\(error)"
+            alert.runModal()
+            NSApp.terminate(nil)
+            return
+        }
+        let tools: [any ToolAdapter] = [ClaudeTool(env: env), CodexTool(env: env), AgyTool(env: env)]
+        let http = HTTPClient(session: URLSession(configuration: .ephemeral))
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        let now: @Sendable () -> Date = { Date() }
+        let state = AppState(defaults: .standard, now: now)
+        let poller = Poller(state: state, tools: tools, vault: vault,
+                            fetcher: AllowanceFetcher(http: http, version: version, now: now),
+                            sleeper: TaskSleeper(), now: now, renewer: Renewer(http: http, tools: tools, now: now))
+        self.poller = poller
+        statusItem = StatusItemController(state: state, preferences: MenuBarPreferences(defaults: .standard))
+        poller.start()
     }
 
     /// An `.accessory` app draws no menu bar, but key equivalents still route through the main menu.
@@ -40,30 +72,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         appItem.submenu = appMenu
         return main
-    }
-
-    /// The app glyph: three rising rounded bars, as a template image.
-    private static func glyph() -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        let image = NSImage(size: size, flipped: false) { _ in
-            let barWidth: CGFloat = 4
-            let gap: CGFloat = 2
-            let heights: [CGFloat] = [7, 11, 15]
-            let originX = (size.width - (3 * barWidth + 2 * gap)) / 2
-            let baseline: CGFloat = 1.5
-            NSColor.black.setFill()
-            for (index, height) in heights.enumerated() {
-                let rect = NSRect(
-                    x: originX + CGFloat(index) * (barWidth + gap),
-                    y: baseline,
-                    width: barWidth,
-                    height: height
-                )
-                NSBezierPath(roundedRect: rect, xRadius: barWidth / 2, yRadius: barWidth / 2).fill()
-            }
-            return true
-        }
-        image.isTemplate = true
-        return image
     }
 }
