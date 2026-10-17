@@ -266,13 +266,35 @@ struct CellView: View {
 
 // MARK: - Small pieces
 
+/// Each tool's own icon, from the app's Resources (copied from CodexBar, MIT): a white silhouette for the menubar,
+/// brand colours elsewhere. Nil outside the app bundle (tests, `swift run`), where the letter marks stand in.
+@MainActor enum ToolIcon {
+    private static var cache: [String: NSImage] = [:]
+
+    static func brand(_ tool: Tool) -> NSImage? { load("ToolBrand-\(tool.rawValue)", ["svg", "png"], template: false) }
+    static func glyph(_ tool: Tool) -> NSImage? { load("ToolIcon-\(tool.rawValue)", ["svg"], template: true) }
+
+    private static func load(_ name: String, _ extensions: [String], template: Bool) -> NSImage? {
+        if let cached = cache[name] { return cached }
+        guard let url = extensions.lazy.compactMap({ Bundle.main.url(forResource: name, withExtension: $0) }).first,
+              let image = NSImage(contentsOf: url) else { return nil }
+        image.isTemplate = template
+        cache[name] = image
+        return image
+    }
+}
+
 struct ToolMark: View {
     let tool: Tool
     let size: CGFloat
 
     var body: some View {
-        Text(tool.letter).font(.system(size: size * 0.55, weight: .bold)).foregroundStyle(.white)
-            .frame(width: size, height: size).background(Theme.accent(tool), in: RoundedRectangle(cornerRadius: size * 0.28))
+        if let icon = ToolIcon.brand(tool) {
+            Image(nsImage: icon).resizable().interpolation(.high).scaledToFit().frame(width: size, height: size)
+        } else {
+            Text(tool.letter).font(.system(size: size * 0.55, weight: .bold)).foregroundStyle(.white)
+                .frame(width: size, height: size).background(Theme.accent(tool), in: RoundedRectangle(cornerRadius: size * 0.28))
+        }
     }
 }
 

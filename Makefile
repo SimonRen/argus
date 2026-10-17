@@ -13,6 +13,7 @@ build:
 	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources"
 	cp "$$(swift build -c release --scratch-path "$(SCRATCH)" --show-bin-path)/MagpieLite" "$(APP)/Contents/MacOS/MagpieLite"
 	cp Resources/AppIcon.icns "$(APP)/Contents/Resources/AppIcon.icns"
+	cp Resources/ToolIcons/* "$(APP)/Contents/Resources/"
 	cp Resources/Info.plist "$(APP)/Contents/Info.plist"
 	xattr -cr "$(APP)"
 	codesign --force --sign "$(SIGN)" "$(APP)"

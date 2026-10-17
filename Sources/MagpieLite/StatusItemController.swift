@@ -86,6 +86,16 @@ import Observation
     private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold)
     private static let letterFont = NSFont.systemFont(ofSize: 8.5, weight: .heavy)
 
+    /// A white-silhouette tool icon filled with `color`.
+    private static func tinted(_ glyph: NSImage, _ color: NSColor) -> NSImage {
+        NSImage(size: glyph.size, flipped: false) { rect in
+            glyph.draw(in: rect)
+            color.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+    }
+
     /// One non-template image; colours resolved for the current drawing appearance.
     static func image(_ summary: MenuBarSummary, dark: Bool) -> NSImage {
         let label = NSColor.labelColor.usingColorSpace(.sRGB) ?? .black
@@ -95,17 +105,22 @@ import Observation
             max(width(segment.fiveHour.text), width(segment.sevenDay.text))
         }
         let total = padding * 2 + widths.reduce(0) { $0 + mark + gap + $1 } + spacing * CGFloat(max(0, widths.count - 1))
+        let glyphs = summary.segments.map { ToolIcon.glyph($0.tool).map { tinted($0, label) } }
         let image = NSImage(size: NSSize(width: ceil(total), height: height), flipped: false) { _ in
             var x = padding
-            for (segment, valueWidth) in zip(summary.segments, widths) {
-                let square = NSRect(x: x + 0.75, y: (height - mark) / 2 + 0.75, width: mark - 1.5, height: mark - 1.5)
-                let path = NSBezierPath(roundedRect: square, xRadius: 4, yRadius: 4)
-                path.lineWidth = 1.5
-                label.setStroke()
-                path.stroke()
-                let letter = NSAttributedString(string: segment.letter, attributes: [.font: letterFont, .foregroundColor: label])
-                let size = letter.size()
-                letter.draw(at: NSPoint(x: x + (mark - size.width) / 2, y: (height - size.height) / 2))
+            for ((segment, valueWidth), glyph) in zip(zip(summary.segments, widths), glyphs) {
+                if let glyph {
+                    glyph.draw(in: NSRect(x: x, y: (height - mark) / 2, width: mark, height: mark))
+                } else {
+                    let square = NSRect(x: x + 0.75, y: (height - mark) / 2 + 0.75, width: mark - 1.5, height: mark - 1.5)
+                    let path = NSBezierPath(roundedRect: square, xRadius: 4, yRadius: 4)
+                    path.lineWidth = 1.5
+                    label.setStroke()
+                    path.stroke()
+                    let letter = NSAttributedString(string: segment.letter, attributes: [.font: letterFont, .foregroundColor: label])
+                    let size = letter.size()
+                    letter.draw(at: NSPoint(x: x + (mark - size.width) / 2, y: (height - size.height) / 2))
+                }
                 x += mark + gap
                 for (value, top) in [(segment.fiveHour, true), (segment.sevenDay, false)] {
                     let color = value.severity == .low ? low : label
