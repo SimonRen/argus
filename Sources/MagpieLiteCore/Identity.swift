@@ -219,9 +219,9 @@ func hexData(_ hex: String) -> Data? {
     return out
 }
 
-/// RFC 3339 with 0–9 fractional digits and `Z` or `±hh:mm`.
+/// RFC 3339 / ISO 8601 with any number of fractional digits and `Z` or `±hh:mm`.
 func parseRFC3339(_ s: String) -> Date? {
-    let pattern = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?([Zz]|[+-]\d{2}:\d{2})$/
+    let pattern = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?([Zz]|[+-]\d{2}:\d{2})$/
     guard let m = s.wholeMatch(of: pattern) else { return nil }
     var comps = DateComponents()
     comps.year = Int(m.1); comps.month = Int(m.2); comps.day = Int(m.3)
