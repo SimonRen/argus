@@ -108,5 +108,14 @@ struct BundleTests {
         // The signature verifies.
         let verify = try await run("/usr/bin/codesign", ["--verify", app.path], in: root, logDir: logs)
         #expect(verify.status == 0, "codesign --verify exited \(verify.status):\n\(tail(verify.output))")
+
+        // The binary records the SDK it was built with, not the deployment target: macOS 26 runs an app that says
+        // "SDK 15" in its old-SDK compatibility mode.
+        let buildVersion = try await run("/usr/bin/xcrun", ["vtool", "-show-build", executable.path], in: root, logDir: logs)
+        let sdk = buildVersion.output.split(separator: "\n")
+            .first { $0.trimmingCharacters(in: .whitespaces).hasPrefix("sdk ") }
+            .flatMap { $0.split(separator: " ").last?.split(separator: ".").first }
+            .flatMap { Int($0) }
+        #expect((sdk ?? 0) >= 26, "the binary's SDK version is not 26 or later:\n\(tail(buildVersion.output))")
     }
 }

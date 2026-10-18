@@ -8,7 +8,7 @@ Named after Argus Panoptes, the hundred-eyed watchman of Greek myth.
 
 | | |
 | --- | --- |
-| Platform | macOS 26, Apple silicon; menubar accessory (`LSUIElement`) |
+| Platform | macOS 15 or later, Apple silicon; menubar accessory (`LSUIElement`) |
 | Tools | Claude Code, Codex CLI, Antigravity CLI |
 | Source | Swift 6, SwiftUI + AppKit, no package dependencies |
 | Spec | [`docs/design/magpie-lite/`](docs/design/magpie-lite/) · decisions in [`docs/adr/`](docs/adr/) |

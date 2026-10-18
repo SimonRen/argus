@@ -103,7 +103,7 @@ struct ManagerView: View {
             }
             .help("Refresh live accounts").accessibilityLabel("Refresh live accounts")
         }
-        ToolbarSpacer(.fixed, placement: .primaryAction)
+        if #available(macOS 26, *) { ToolbarSpacer(.fixed, placement: .primaryAction) }
         ToolbarItem(placement: .primaryAction) {
             HStack(spacing: 8) {
                 Text("Launch at login").font(.system(size: 12)).foregroundStyle(t.sub)

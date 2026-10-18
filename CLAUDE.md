@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Argus is a macOS 26 menubar app (Swift 6, SwiftPM, no package dependencies, Apple silicon) that keeps a vault of logins for Claude Code, Codex and Antigravity CLI (agy). It switches each tool's live login in place and polls every saved account's 5-hour and 7-day allowance. The app was renamed from magpie-lite, which is why the repo folder, `magpie-lite-PRD.md` and `docs/design/magpie-lite/` still use the old name.
+Argus is a macOS 15+ menubar app (Swift 6, SwiftPM, no package dependencies, Apple silicon) that keeps a vault of logins for Claude Code, Codex and Antigravity CLI (agy). It switches each tool's live login in place and polls every saved account's 5-hour and 7-day allowance. The app was renamed from magpie-lite, which is why the repo folder, `magpie-lite-PRD.md` and `docs/design/magpie-lite/` still use the old name.
 
 ## Commands
 

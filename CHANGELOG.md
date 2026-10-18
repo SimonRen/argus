@@ -6,6 +6,12 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-18
+
+### Changed
+
+- Argus now runs on macOS 15 Sequoia or later on Apple silicon; it required macOS 26 before.
+
 ## [0.2.3] - 2026-10-18
 
 ### Fixed

@@ -19,6 +19,9 @@ SIGN ?= -
 CODESIGN_FLAGS ?=
 # Extra swift build flags; the release pins the Apple-silicon slice.
 SWIFT_FLAGS ?=
+# The Swift driver links through `clang --sysroot`, which records the deployment target as the SDK version; -isysroot
+# makes clang record the real SDK, so macOS 26 does not run Argus in its old-SDK compatibility mode.
+SDK_FLAGS := -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc "$(shell xcrun --show-sdk-path)"
 
 APP := $(OUT)/Argus.app
 INSTALLED := $(HOME)/Applications/Argus.app
@@ -26,12 +29,12 @@ PLIST := Resources/Info.plist
 # The version lives in VERSION (Semantic Versioning); the build number is the commit count, so it only grows on main.
 APP_VERSION := $(shell cat VERSION)
 BUILD_NUMBER := $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
-BIN = $$(swift build -c release $(SWIFT_FLAGS) --scratch-path "$(SCRATCH)" --show-bin-path)
+BIN = $$(swift build -c release $(SWIFT_FLAGS) $(SDK_FLAGS) --scratch-path "$(SCRATCH)" --show-bin-path)
 
 .PHONY: build dev test check version-check guard install run bump release publish clean
 
 build:
-	swift build -c release $(SWIFT_FLAGS) --scratch-path "$(SCRATCH)" --product Argus
+	swift build -c release $(SWIFT_FLAGS) $(SDK_FLAGS) --scratch-path "$(SCRATCH)" --product Argus
 	rm -rf "$(APP)"
 	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources"
 	cp "$(BIN)/Argus" "$(APP)/Contents/MacOS/Argus"
