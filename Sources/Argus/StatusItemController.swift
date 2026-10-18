@@ -2,6 +2,19 @@ import AppKit
 import ArgusCore
 import Observation
 
+struct PopoverWarmup {
+    private(set) var didWarm = false
+
+    @discardableResult
+    mutating func attempt(isReady: Bool, _ warm: () -> Bool) -> Bool {
+        guard !didWarm else { return true }
+        guard isReady else { return false }
+        guard warm() else { return false }
+        didWarm = true
+        return true
+    }
+}
+
 /// Owns the status item and redraws it whenever the summary, a Show-in-menubar choice or the menubar's appearance changes.
 @MainActor final class StatusItemController: NSObject, NSPopoverDelegate {
     let item: NSStatusItem
@@ -12,8 +25,11 @@ import Observation
     /// Clicks in other apps while the popover is shown.
     private var outsideClicks: Any?
     private var popover: NSPopover?
+    /// Holds the hosting view in a hidden window until the popover is first shown, so AppKit/SwiftUI bridge setup is off the click path.
+    private var warmWindow: NSWindow?
     private var screen: PopoverScreen?
     private var openManager: () -> Void = {}
+    private var popoverWarmup = PopoverWarmup()
 
     init(state: AppState, preferences: MenuBarPreferences) {
         self.state = state
@@ -39,6 +55,13 @@ import Observation
         popover.contentViewController = content
         popover.delegate = self
         self.popover = popover
+        let warmWindow = NSWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 392, height: 600),
+                                  styleMask: .borderless, backing: .buffered, defer: false)
+        warmWindow.isReleasedWhenClosed = false
+        warmWindow.contentViewController = content
+        warmWindow.orderOut(nil)
+        warmWindow.contentView?.layoutSubtreeIfNeeded()
+        self.warmWindow = warmWindow
         // Activation can land after the popover is shown; it takes key then, or it keeps the inactive look.
         activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -51,6 +74,21 @@ import Observation
     }
 
     @objc private func clicked() { togglePopover() }
+
+    /// Builds the popover window once after launch, before the first status-item click.
+    @discardableResult
+    func prewarmPopover() -> Bool {
+        guard let popover, let button = item.button else { return false }
+        let warmed = popoverWarmup.attempt(isReady: button.window != nil) {
+            guard !popover.isShown else { return true }
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            let didShow = popover.contentViewController?.view.window != nil
+            popover.performClose(nil)
+            return didShow
+        }
+        if warmed { warmWindow = nil }
+        return warmed
+    }
 
     func togglePopover() {
         guard let popover else { return }

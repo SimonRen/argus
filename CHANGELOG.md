@@ -6,6 +6,12 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-18
+
+### Fixed
+
+- The first menubar popover open no longer waits for SwiftUI and AppKit to build its hosting window; that work is warmed after launch.
+
 ## [0.2.2] - 2026-10-18
 
 ### Fixed

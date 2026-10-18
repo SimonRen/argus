@@ -22,6 +22,11 @@ let package = Package(
             dependencies: ["ArgusCore"],
             path: "Tests/ArgusCoreTests"
         ),
+        .testTarget(
+            name: "ArgusTests",
+            dependencies: ["Argus"],
+            path: "Tests/ArgusTests"
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

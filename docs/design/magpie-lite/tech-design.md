@@ -282,6 +282,7 @@ Candidate scope: create `Sources/MagpieLite/LaunchAtLogin.swift`
 - **Running-low suggestion** — the live-row prompt to switch to a fresh saved account with headroom (FR-06.6). _Avoid_: alert, notification, auto-switch.
 
 ## Changelog
+- 2026-10-18 — The menubar popover's SwiftUI/AppKit hosting window is warmed after launch so its first open does not pay the initial layout cost (FR-06.1).
 - 2026-10-18 — Manager table columns now follow the current detail width after a resize or zoom restore (FR-07.10).
 - 2026-10-16 — seeded from PRD × grounding at a03033d.
 - 2026-10-16 — PRD amended (4ea16f6): file vault, 3/5/10-minute interval, system-wide switch; §3 and §5 follow it.

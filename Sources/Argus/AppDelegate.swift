@@ -85,6 +85,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         content.sizingOptions = [.preferredContentSize]
         statusItem.attach(popover: content, screen: screen) { [weak self] in self?.openManager() }
         self.statusItem = statusItem
+        Task { @MainActor in
+            do {
+                // Let the first polling batch settle before warming SwiftUI's layout; otherwise its state update dirties the warm layout.
+                try await Task.sleep(for: .seconds(1))
+            } catch {
+                return
+            }
+            for _ in 0..<20 {
+                if statusItem.prewarmPopover() { return }
+                do {
+                    try await Task.sleep(for: .milliseconds(100))
+                } catch {
+                    return
+                }
+            }
+        }
         Task {
             await switcher.settleInterruptedSwitch()
             poller.start()
