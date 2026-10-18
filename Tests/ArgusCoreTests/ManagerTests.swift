@@ -12,6 +12,10 @@ import ArgusCore
 }
 
 @MainActor @Suite struct ManagerTests {
+    @Test func `manager table width fits the restored detail area`() {
+        #expect(ManagerLayout.fittingTableWidth(measuredWidth: 1_800, availableWidth: 780) == 780)
+    }
+
     // MARK: F07-AC-7.c2
 
     @Test func `REQ/F07-AC-7.c2 Remove deletes the file and prev, leaves the lists and the poll set, and offers Undo`() async throws {

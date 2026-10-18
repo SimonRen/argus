@@ -166,6 +166,7 @@ Binds: DEC-02, DEC-08, DEC-09, DEC-01, DEC-10, DEC-11, R-18, R-25, C-01, C-02, C
 | FR-07.7 | WHEN a tool's Show in menubar switch changes THEN the status item updates at once and the sidebar glyph follows | AC-7 | PRD §Show in menubar | active | §6 | manual run |
 | FR-07.8 | WHEN Save current login succeeds THEN the banner reads "Saved <email>." for a new entry or "Updated the saved login for <email>." for an existing one | AC-7 | PRD story 2 | active | §6 | unit on banner text |
 | FR-07.9 | WHEN a tool has no saved accounts THEN the table shows "No saved accounts" and "Sign in with <tool> as usual, then choose Save current login to keep it here." | AC-7 | PRD §Adding accounts | active | §6 | manual run |
+| FR-07.10 | WHEN the manager is resized or restored after zooming THEN the detail table fits the current detail area and keeps the sidebar and account column visible | AC-7 | — layout | active | §6 | unit on responsive table width; manual run |
 
 ## F-08 — Launch at login   (active · PRD story 10)
 Candidate scope: create `Sources/MagpieLite/LaunchAtLogin.swift`

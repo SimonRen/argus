@@ -6,6 +6,12 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-18
+
+### Fixed
+
+- Manager table columns now follow the current detail width after a resize or zoom restore, keeping the sidebar and account column visible.
+
 ## [0.2.1] - 2026-10-17
 
 ### Changed

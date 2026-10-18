@@ -157,81 +157,86 @@ struct ManagerView: View {
         let snapshot = state.snapshot(selected)
         let card = ToolCard.build(snapshot, expanded: true, dismissedUnsavedKey: nil, now: now)
         let rows = card.rows
-        return ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 12) {
-                    ToolMark(tool: selected, size: 32)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(selected.displayName).font(.system(size: 18, weight: .bold))
-                        Text(ManagerText.header(snapshot)).font(.system(size: 12)).foregroundStyle(t.sub)
-                    }
-                    Spacer()
-                    HStack(spacing: 8) {
-                        Text("Show in").font(.system(size: 12)).foregroundStyle(t.sub).fixedSize()
-                        Text("Menubar").font(.system(size: 12)).fixedSize()
-                        Toggle("Show \(selected.displayName) in menubar",
-                               isOn: Binding(get: { preferences.isShown(selected) }, set: { preferences.setShown(selected, $0) }))
-                            .toggleStyle(.switch).labelsHidden().controlSize(.small)
-                        Text("Popover").font(.system(size: 12)).fixedSize().padding(.leading, 4)
-                        Toggle("Show \(selected.displayName) in popover",
-                               isOn: Binding(get: { preferences.isInPopover(selected) }, set: { preferences.setInPopover(selected, $0) }))
-                            .toggleStyle(.switch).labelsHidden().controlSize(.small)
-                    }
-                    .padding(.leading, 12).padding(.trailing, 6).frame(height: 30).background(t.soft, in: RoundedRectangle(cornerRadius: 9))
-                    Button {
-                        let tool = selected
-                        Task {
-                            let result = await commands.save(tool)
-                            commands.dismissNotice()
-                            let problem = if case .refused = result { true } else { false }
-                            saveBanner[tool] = (ManagerText.saveBanner(result), problem)
+        return GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 12) {
+                        ToolMark(tool: selected, size: 32)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(selected.displayName).font(.system(size: 18, weight: .bold))
+                            Text(ManagerText.header(snapshot)).font(.system(size: 12)).foregroundStyle(t.sub)
                         }
-                    } label: {
-                        Text("Save current login").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
-                            .padding(.horizontal, 12).frame(height: 30).background(t.ok, in: RoundedRectangle(cornerRadius: 9))
-                    }
-                    .buttonStyle(.plain)
-                }
-                if let banner = saveBanner[selected] {
-                    Text(banner.text).font(.system(size: 12, weight: .semibold)).foregroundStyle(banner.problem ? t.warnText : t.flashText)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(banner.problem ? t.warnBg : t.flashBg, in: RoundedRectangle(cornerRadius: 9))
-                }
-                if let notice = commands.notice {
-                    HStack(alignment: .center, spacing: 10) {
-                        Text(notice).font(.system(size: 12, weight: .semibold)).foregroundStyle(commands.noticeIsProblem ? t.warnText : t.flashText)
-                            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-                        if commands.offersRestart {
-                            PillButton(title: "Restart app-server", fill: t.ok) { Task { await commands.restartCodexDaemon() } }
-                        }
-                        Button(action: commands.dismissNotice) {
-                            Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 22, height: 22)
-                        }
-                        .buttonStyle(HoverStyle()).foregroundStyle(t.sub).accessibilityLabel("Dismiss")
-                    }
-                    .padding(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 6))
-                    .background(commands.noticeIsProblem ? t.warnBg : t.flashBg, in: RoundedRectangle(cornerRadius: 9))
-                }
-                if let undo = commands.undoBanner {
-                    HStack(spacing: 10) {
-                        Text(undo).font(.system(size: 12))
                         Spacer()
-                        Button { Task { await commands.undo() } } label: {
-                            Text("Undo").font(.system(size: 12, weight: .semibold)).padding(.horizontal, 12).frame(height: 26)
-                                .background(t.btn, in: RoundedRectangle(cornerRadius: 8))
+                        HStack(spacing: 8) {
+                            Text("Show in").font(.system(size: 12)).foregroundStyle(t.sub).fixedSize()
+                            Text("Menubar").font(.system(size: 12)).fixedSize()
+                            Toggle("Show \(selected.displayName) in menubar",
+                                   isOn: Binding(get: { preferences.isShown(selected) }, set: { preferences.setShown(selected, $0) }))
+                                .toggleStyle(.switch).labelsHidden().controlSize(.small)
+                            Text("Popover").font(.system(size: 12)).fixedSize().padding(.leading, 4)
+                            Toggle("Show \(selected.displayName) in popover",
+                                   isOn: Binding(get: { preferences.isInPopover(selected) }, set: { preferences.setInPopover(selected, $0) }))
+                                .toggleStyle(.switch).labelsHidden().controlSize(.small)
+                        }
+                        .padding(.leading, 12).padding(.trailing, 6).frame(height: 30).background(t.soft, in: RoundedRectangle(cornerRadius: 9))
+                        Button {
+                            let tool = selected
+                            Task {
+                                let result = await commands.save(tool)
+                                commands.dismissNotice()
+                                let problem = if case .refused = result { true } else { false }
+                                saveBanner[tool] = (ManagerText.saveBanner(result), problem)
+                            }
+                        } label: {
+                            Text("Save current login").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                                .padding(.horizontal, 12).frame(height: 30).background(t.ok, in: RoundedRectangle(cornerRadius: 9))
                         }
                         .buttonStyle(.plain)
                     }
-                    .padding(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 6)).background(t.soft, in: RoundedRectangle(cornerRadius: 9))
+                    if let banner = saveBanner[selected] {
+                        Text(banner.text).font(.system(size: 12, weight: .semibold)).foregroundStyle(banner.problem ? t.warnText : t.flashText)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(banner.problem ? t.warnBg : t.flashBg, in: RoundedRectangle(cornerRadius: 9))
+                    }
+                    if let notice = commands.notice {
+                        HStack(alignment: .center, spacing: 10) {
+                            Text(notice).font(.system(size: 12, weight: .semibold)).foregroundStyle(commands.noticeIsProblem ? t.warnText : t.flashText)
+                                .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                            if commands.offersRestart {
+                                PillButton(title: "Restart app-server", fill: t.ok) { Task { await commands.restartCodexDaemon() } }
+                            }
+                            Button(action: commands.dismissNotice) {
+                                Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 22, height: 22)
+                            }
+                            .buttonStyle(HoverStyle()).foregroundStyle(t.sub).accessibilityLabel("Dismiss")
+                        }
+                        .padding(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 6))
+                        .background(commands.noticeIsProblem ? t.warnBg : t.flashBg, in: RoundedRectangle(cornerRadius: 9))
+                    }
+                    if let undo = commands.undoBanner {
+                        HStack(spacing: 10) {
+                            Text(undo).font(.system(size: 12))
+                            Spacer()
+                            Button { Task { await commands.undo() } } label: {
+                                Text("Undo").font(.system(size: 12, weight: .semibold)).padding(.horizontal, 12).frame(height: 26)
+                                    .background(t.btn, in: RoundedRectangle(cornerRadius: 8))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 6)).background(t.soft, in: RoundedRectangle(cornerRadius: 9))
+                    }
+                    table(t, rows: rows, availableWidth: proxy.size.width - 48)
                 }
-                table(t, rows: rows)
+                .padding(.horizontal, 24).padding(.vertical, 22)
             }
-            .padding(.horizontal, 24).padding(.vertical, 22)
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func table(_ t: Theme, rows: [AccountRow]) -> some View {
-        let columns = Columns(width: tableWidth)
+    private func table(_ t: Theme, rows: [AccountRow], availableWidth: CGFloat) -> some View {
+        let width = ManagerLayout.fittingTableWidth(measuredWidth: tableWidth, availableWidth: availableWidth)
+        let columns = Columns(width: width)
         return VStack(spacing: 0) {
             HStack(spacing: Columns.gap) {
                 Text("ACCOUNT").frame(width: columns.account, alignment: .leading)
