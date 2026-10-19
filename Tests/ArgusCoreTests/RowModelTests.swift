@@ -128,7 +128,7 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
 
     @Test func `a window with nothing used reads not started, even with a reset time`() {
         #expect(PopoverText.resetText(AllowanceWindow(remaining: 100, resetsAt: now + 18000), now: now) == "not started")
-        #expect(PopoverText.resetText(AllowanceWindow(remaining: 99.6, resetsAt: now + 18000), now: now) == "in 5h 00m")
+        #expect(PopoverText.resetText(AllowanceWindow(remaining: 99.6, resetsAt: now + 18000), now: now) == "5h 00m")
     }
 
     @Test func `REQ/F06-AC-6.c6 ties go to the first account in list order`() {
@@ -158,16 +158,16 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
         func text(_ seconds: TimeInterval, remaining: Double = 50) -> String {
             PopoverText.resetText(AllowanceWindow(remaining: remaining, resetsAt: now + seconds), now: now)
         }
-        #expect(text(48 * 60) == "in 48m")
-        #expect(text(2 * 3600 + 14 * 60) == "in 2h 14m")
-        #expect(text(4 * 3600 + 2 * 60) == "in 4h 02m")
-        #expect(text(6 * 86400 + 18 * 3600) == "in 6d 18h")
+        #expect(text(48 * 60) == "48m")
+        #expect(text(2 * 3600 + 14 * 60) == "2h 14m")
+        #expect(text(4 * 3600 + 2 * 60) == "4h 02m")
+        #expect(text(6 * 86400 + 18 * 3600) == "6d 18h")
         #expect(PopoverText.resetText(AllowanceWindow(remaining: 100, resetsAt: nil), now: now) == "not started")
         #expect(PopoverText.resetText(AllowanceWindow(remaining: 60, resetsAt: nil), now: now) == "—")
         #expect(PopoverText.resetText(nil, now: now) == "—")
         let weekly = AccountRowProbe(account("w@example.com", reading: reading([("", nil, 54)], resets: now + 3600))).row
         #expect(weekly.groups[0].fiveHour.resetText == "none")
-        #expect(weekly.groups[0].sevenDay.resetText == "in 1h 00m")
+        #expect(weekly.groups[0].sevenDay.resetText == "1h 00m")
     }
 
     // MARK: F06-AC-6.c8

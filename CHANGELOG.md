@@ -11,6 +11,7 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 ### Changed
 
 - Context names on the popover cards, in the manager and in the menubar are shown in capitals.
+- Reset times read "2h 14m" instead of "in 2h 14m".
 
 ## [0.5.0] - 2026-10-19
 

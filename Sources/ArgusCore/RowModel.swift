@@ -247,9 +247,9 @@ public enum PopoverText {
         guard let resetsAt = window.resetsAt else { return "—" }
         let seconds = max(0, Int(resetsAt.timeIntervalSince(now)))
         let minutes = seconds / 60, hours = seconds / 3600, days = seconds / 86400
-        if seconds < 3600 { return "in \(minutes)m" }
-        if seconds < 86400 { return "in \(hours)h \(String(format: "%02d", minutes % 60))m" }
-        return "in \(days)d \(hours % 24)h"
+        if seconds < 3600 { return "\(minutes)m" }
+        if seconds < 86400 { return "\(hours)h \(String(format: "%02d", minutes % 60))m" }
+        return "\(days)d \(hours % 24)h"
     }
 
     public static func age(since: Date, now: Date) -> String {
