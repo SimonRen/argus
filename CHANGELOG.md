@@ -13,7 +13,6 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 - Each Claude Code and Codex context now keeps its own saved accounts. Save, Switch and Remove act on that context only, so removing an account from one context leaves the others alone. Your existing saved accounts belong to the default context; save another context's logins from its own page. An account saved in several contexts is still checked once and shows the same usage everywhere.
 - The same account can now be live in several contexts at once, each on its own sign-in. A switch is refused only when it would copy one context's login into another.
 - Removing a context keeps its saved accounts on disk, unused, and adding the same folder again brings them back.
-
 - Polling no longer runs like clockwork. Each wait between refreshes varies by up to 10% either way, and requests to one service go 3 to 10 seconds apart at random instead of every 2 seconds.
 
 ## [0.4.0] - 2026-10-19
