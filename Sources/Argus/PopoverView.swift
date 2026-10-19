@@ -355,14 +355,14 @@ struct ToolMark: View {
 }
 
 /// A tool's context menu: the selected context's name as a chip, the tool's contexts checked in its menu.
-/// The context a card or manager page is the section of, beside the tool's name; its variable on hover.
+/// The context a card or manager page is the section of, beside the tool's name, in capitals; its variable on hover.
 struct ContextChip: View {
     let context: ToolContext
     let name: String
     let theme: Theme
 
     var body: some View {
-        Text(name).lineLimit(1)
+        Text(name).textCase(.uppercase).lineLimit(1)
             .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(theme.sub)
             .padding(.horizontal, 6).frame(height: 18).background(theme.chip, in: Capsule()).fixedSize()
             .help(context.assignment ?? "\(context.tool.displayName)'s default folder")
