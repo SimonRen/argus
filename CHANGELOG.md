@@ -6,6 +6,10 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+### Fixed
+
+- A context's name in the menubar is drawn in the full text color, so it stays readable on any wallpaper.
+
 ## [0.5.1] - 2026-10-19
 
 ### Changed

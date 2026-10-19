@@ -307,6 +307,7 @@ Candidate scope: create `Sources/ArgusCore/ToolContexts.swift`; modify `ToolEnvi
 - **Context** — one folder a tool runs from, named by its variable's exact value (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`); the default is the variable unset. Accounts are shared by every context (ADR-0004). _Avoid_: profile, environment, workspace.
 
 ## Changelog
+- 2026-10-19 — The menubar's context name is drawn in `labelColor` like the values, not `secondaryLabelColor`: the status image isn't a template, so a translucent grey gets no vibrancy and faded on mid-grey wallpapers (FR-09.6).
 - 2026-10-19 — Reset times drop their "in" prefix: "48m", "2h 14m", "6d 18h" (§6, FR-06.7).
 - 2026-10-19 — The menubar shows an added context's name in capitals, as its chip does (FR-09.6).
 - 2026-10-19 — Context chips show the context's name in capitals (FR-09.6).
