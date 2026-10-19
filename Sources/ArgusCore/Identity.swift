@@ -164,6 +164,13 @@ public enum LiveState: Sendable, Equatable {
 public protocol ToolAdapter: Sendable {
     var tool: Tool { get }
     func readLive() async -> LiveState
+    /// The same reader for another of the tool's contexts.
+    func scoped(to context: ToolContext) -> any ToolAdapter
+}
+
+extension ToolAdapter {
+    /// A tool without contexts reads one live login whatever the context.
+    public func scoped(to context: ToolContext) -> any ToolAdapter { self }
 }
 
 // MARK: - Parsing helpers shared by the tool adapters

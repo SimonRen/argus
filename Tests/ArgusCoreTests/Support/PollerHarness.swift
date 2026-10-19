@@ -16,6 +16,11 @@ final class FakeTool: ToolAdapter, @unchecked Sendable {
     var reads: Int { lock.withLock { count } }
     func script(_ next: [LiveState]) { lock.withLock { states = next } }
 
+    /// Readers for other contexts, by context id; a context without one reads this one.
+    private var others: [String: FakeTool] = [:]
+    func add(_ context: ToolContext, _ reader: FakeTool) { lock.withLock { others[context.id] = reader } }
+    func scoped(to context: ToolContext) -> any ToolAdapter { lock.withLock { others[context.id] } ?? self }
+
     func readLive() async -> LiveState {
         lock.withLock {
             count += 1

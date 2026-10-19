@@ -34,9 +34,12 @@ public struct AccountSnapshot: Sendable, Equatable {
     /// Why the last fetch failed or was skipped, and when its backoff lets it try again.
     public let error: String?
     public let retryAt: Date?
+    /// The names of the tool's other contexts this account is live in.
+    public let liveElsewhere: [String]
 
     public init(key: AccountKey, label: String, plan: String?, isLive: Bool, isSaved: Bool, kept: Bool,
-                flag: AccountFlag, reading: AllowanceReading?, stale: Bool, fetching: Bool = false, error: String? = nil, retryAt: Date? = nil) {
+                flag: AccountFlag, reading: AllowanceReading?, stale: Bool, fetching: Bool = false, error: String? = nil, retryAt: Date? = nil,
+                liveElsewhere: [String] = []) {
         self.key = key
         self.label = label
         self.plan = plan
@@ -49,22 +52,29 @@ public struct AccountSnapshot: Sendable, Equatable {
         self.fetching = fetching
         self.error = error
         self.retryAt = retryAt
+        self.liveElsewhere = liveElsewhere
     }
 }
 
 public struct ToolSnapshot: Sendable, Equatable {
     public let tool: Tool
-    /// nil before the first read.
+    /// The selected context's live login; nil before the first read.
     public let live: LiveState?
     /// Every vault entry plus an unsaved live login; no order promised.
     public let accounts: [AccountSnapshot]
     public let rateLimitedUntil: Date?
+    /// The selected context, and every context of the tool (the default first).
+    public let context: ToolContext
+    public let contexts: [ToolContext]
 
-    public init(tool: Tool, live: LiveState?, accounts: [AccountSnapshot], rateLimitedUntil: Date?) {
+    public init(tool: Tool, live: LiveState?, accounts: [AccountSnapshot], rateLimitedUntil: Date?,
+                context: ToolContext? = nil, contexts: [ToolContext]? = nil) {
         self.tool = tool
         self.live = live
         self.accounts = accounts
         self.rateLimitedUntil = rateLimitedUntil
+        self.context = context ?? .default(tool)
+        self.contexts = contexts ?? [self.context]
     }
 }
 
@@ -80,9 +90,9 @@ extension ToolSnapshot {
         let accounts = accounts.map { a in
             AccountSnapshot(key: a.key, label: a.label, plan: a.plan, isLive: a.isLive, isSaved: a.isSaved, kept: a.kept, flag: a.flag,
                             reading: a.reading.map { AllowanceReading(groups: $0.groups.filter(major), plan: $0.plan, fetchedAt: $0.fetchedAt) },
-                            stale: a.stale, fetching: a.fetching, error: a.error, retryAt: a.retryAt)
+                            stale: a.stale, fetching: a.fetching, error: a.error, retryAt: a.retryAt, liveElsewhere: a.liveElsewhere)
         }
-        return ToolSnapshot(tool: tool, live: live, accounts: accounts, rateLimitedUntil: rateLimitedUntil)
+        return ToolSnapshot(tool: tool, live: live, accounts: accounts, rateLimitedUntil: rateLimitedUntil, context: context, contexts: contexts)
     }
 }
 
@@ -95,7 +105,12 @@ extension ToolSnapshot {
 
     /// 3, 5 or 10 (defaults key "intervalMinutes"); anything else reads as 5.
     public internal(set) var intervalMinutes: Int
-    public internal(set) var live: [Tool: LiveState] = [:]
+    /// Each tool's added contexts (defaults key "contexts.<tool>"), the default not among them.
+    public internal(set) var addedContexts: [Tool: [ToolContext]] = [:]
+    /// Each tool's selected context id (defaults key "context.<tool>"); absent or unknown → the default.
+    public internal(set) var selectedContextID: [Tool: String] = [:]
+    /// Per tool, per context id: the live login last read.
+    public internal(set) var live: [Tool: [String: LiveState]] = [:]
     public internal(set) var entries: [Tool: [VaultEntry]] = [:]
     public internal(set) var status: [AccountKey: AccountStatus] = [:]
     /// Per account: no allowance request before this (its 429 backoff). Vendors limit per account, not per vendor.
@@ -109,7 +124,7 @@ extension ToolSnapshot {
     /// last live fetch; nil when there is none.
     public var liveUpdatedAt: Date? {
         let readings = Tool.allCases.compactMap { tool -> Date? in
-            guard case .signedIn(let login)? = live[tool] else { return nil }
+            guard case .signedIn(let login)? = liveState(tool) else { return nil }
             return status[AccountKey(tool: tool, id: login.identity.fileID)]?.reading?.fetchedAt
         }
         return (readings + [lastLiveFetch].compactMap { $0 }).max()
@@ -120,10 +135,47 @@ extension ToolSnapshot {
         self.now = now
         let stored = defaults.integer(forKey: Self.intervalKey)
         intervalMinutes = Self.intervals.contains(stored) ? stored : 5
+        for tool in Tool.allCases where tool.supportsContexts {
+            addedContexts[tool] = defaults.data(forKey: Self.contextsKey(tool))
+                .flatMap { try? JSONDecoder().decode([ToolContext].self, from: $0) }?.filter { $0.tool == tool && !$0.isDefault } ?? []
+            selectedContextID[tool] = defaults.string(forKey: Self.selectedKey(tool))
+        }
+    }
+
+    static func contextsKey(_ tool: Tool) -> String { "contexts.\(tool.rawValue)" }
+    static func selectedKey(_ tool: Tool) -> String { "context.\(tool.rawValue)" }
+
+    /// The default context, then those added.
+    public func contexts(_ tool: Tool) -> [ToolContext] { [.default(tool)] + (addedContexts[tool] ?? []) }
+
+    public func selectedContext(_ tool: Tool) -> ToolContext {
+        contexts(tool).first { $0.id == selectedContextID[tool] } ?? .default(tool)
+    }
+
+    /// The selected context's live login; nil before its first read.
+    public func liveState(_ tool: Tool) -> LiveState? { live[tool]?[selectedContext(tool).id] }
+
+    /// The contexts the account is live in, in `contexts` order.
+    public func liveContexts(_ key: AccountKey) -> [ToolContext] {
+        contexts(key.tool).filter { context in
+            if case .signedIn(let login)? = live[key.tool]?[context.id] { login.identity.fileID == key.id } else { false }
+        }
+    }
+
+    /// Another context of the tool whose live login runs on this context's refresh token (a copied folder): whichever
+    /// renews first signs the other out.
+    public func sharesLogin(_ context: ToolContext) -> ToolContext? {
+        guard case .signedIn(let mine)? = live[context.tool]?[context.id], let refresh = mine.tokens.refreshToken else { return nil }
+        return contexts(context.tool).first { other in
+            guard other.id != context.id, case .signedIn(let theirs)? = live[context.tool]?[other.id] else { return false }
+            return theirs.tokens.refreshToken == refresh
+        }
     }
 
     public func snapshot(_ tool: Tool) -> ToolSnapshot {
-        let liveLogin: LiveLogin? = if case .signedIn(let l) = live[tool] { l } else { nil }
+        let context = selectedContext(tool), contexts = contexts(tool)
+        let liveState = live[tool]?[context.id]
+        let liveLogin: LiveLogin? = if case .signedIn(let l) = liveState { l } else { nil }
         let liveID = liveLogin?.identity.fileID
         var accounts: [AccountSnapshot] = (entries[tool] ?? []).map { entry in
             let key = AccountKey(tool: tool, id: entry.id)
@@ -140,7 +192,7 @@ extension ToolSnapshot {
                                     isSaved: false, kept: false, derived: liveLogin.identity.isComplete ? .ok : .incomplete))
         }
         let toolBackoff = rateLimitedUntil.filter { $0.key.tool == tool }.values.max()
-        return ToolSnapshot(tool: tool, live: live[tool], accounts: accounts, rateLimitedUntil: toolBackoff)
+        return ToolSnapshot(tool: tool, live: liveState, accounts: accounts, rateLimitedUntil: toolBackoff, context: context, contexts: contexts)
     }
 
     private func account(_ key: AccountKey, label: String, plan: String?, isLive: Bool, isSaved: Bool, kept: Bool,
@@ -150,9 +202,11 @@ extension ToolSnapshot {
         case .needsSignIn?, .appNeedsUpdate?: s!.flag
         default: derived
         }
+        let selected = selectedContext(key.tool).id
         return AccountSnapshot(key: key, label: label, plan: plan, isLive: isLive, isSaved: isSaved, kept: kept,
                                flag: flag, reading: s?.reading, stale: s?.stale ?? false, fetching: fetching.contains(key),
-                               error: s?.error, retryAt: rateLimitedUntil[key].flatMap { $0 > now() ? $0 : nil })
+                               error: s?.error, retryAt: rateLimitedUntil[key].flatMap { $0 > now() ? $0 : nil },
+                               liveElsewhere: liveContexts(key).filter { $0.id != selected }.map(\.name))
     }
 
     func update(_ key: AccountKey, _ change: (inout AccountStatus) -> Void) {

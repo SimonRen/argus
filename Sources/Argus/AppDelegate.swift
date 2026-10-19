@@ -68,9 +68,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             readingsFile: supportRoot.appending(path: "readings.json"), spacing: 2)
         self.poller = poller
         let switcher = Switcher(env: env, vault: vault, processes: .system)
-        let commands = AccountCommands(state: state, poller: poller, vault: vault, tools: tools, switcher: switcher) {
-            guard let codex = CodexProcesses.daemonExecutable(ProcessListing.system.lines()) else { return "no running app-server found" }
-            return await CodexDaemon.restart(executable: codex, codexHome: codexHome)
+        let commands = AccountCommands(state: state, poller: poller, vault: vault, tools: tools, switcher: switcher) { context in
+            // Each Codex home runs its own daemon; the default home also takes one from a Codex too old to record its pid.
+            let home = env.scoped(to: context).liveCodexHome
+            guard let codex = CodexProcesses.daemonExecutable(ProcessListing.system.lines(), codexHome: home, orAny: context.isDefault) else {
+                return "no running app-server found"
+            }
+            return await CodexDaemon.restart(executable: codex, codexHome: home)
         }
         self.commands = commands
         let preferences = MenuBarPreferences(defaults: .standard)
@@ -102,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         Task {
-            await switcher.settleInterruptedSwitch()
+            await switcher.settleInterruptedSwitch(contexts: state.contexts(.claude))
             poller.start()
         }
     }

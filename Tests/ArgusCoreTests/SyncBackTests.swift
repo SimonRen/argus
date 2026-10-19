@@ -50,7 +50,7 @@ fileprivate func entry(_ rig: PollerRig, _ key: AccountKey) async -> VaultEnvelo
         let codexKey = try await rig.save(testLogin(.codex, "e"))
         await rig.poller.reloadVault()
         await rig.poller.rereadLive()
-        #expect(rig.state.live[.claude] == .signedIn(fresh))
+        #expect(rig.state.liveState(.claude) == .signedIn(fresh))
         #expect(await entry(rig, codexKey)?.payloadBytes == codex.bytes)
         #expect(rig.tags.isEmpty)
     }

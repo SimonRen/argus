@@ -36,12 +36,14 @@ public enum KeychainTarget: Sendable, Equatable {
 public struct ToolEnvironment: Sendable {
     /// Stands for the user's home folder.
     public var home: URL
-    /// The resolved `CODEX_HOME`.
+    /// The resolved `CODEX_HOME` of Codex's default context.
     public var codexHome: URL
     /// Login name; picks Claude Code's Keychain account.
     public var user: String
     public var keychain: KeychainTarget
     public var security: any SecurityRunning
+    /// Each tool's context folder, exactly as its variable holds it; a tool absent here uses its default context.
+    public private(set) var contextPaths: [Tool: String] = [:]
 
     public init(home: URL, codexHome: URL, user: String, keychain: KeychainTarget, security: any SecurityRunning) {
         self.home = home
@@ -52,4 +54,19 @@ public struct ToolEnvironment: Sendable {
     }
 
     var keychainClient: Keychain { Keychain(target: keychain, runner: security) }
+
+    /// This environment pointed at `context` for its tool; the other tools keep theirs.
+    public func scoped(to context: ToolContext) -> ToolEnvironment {
+        var env = self
+        env.contextPaths[context.tool] = context.path
+        return env
+    }
+
+    /// `CLAUDE_CONFIG_DIR`; nil when unset.
+    var claudeConfigDir: String? { contextPaths[.claude] }
+
+    /// The Codex home in use: the context's folder, else `codexHome`.
+    public var liveCodexHome: URL {
+        contextPaths[.codex].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? codexHome
+    }
 }

@@ -1,9 +1,15 @@
+import CryptoKit
 import Foundation
 import Testing
 import ArgusCore
 
 fileprivate let fastLocks = ClaudeLockTiming(budget: .milliseconds(300), poll: .milliseconds(50), refreshStale: 60, configStale: 10)
 fileprivate let claudeService = "Claude Code-credentials"
+
+/// Claude Code's item name for `CLAUDE_CONFIG_DIR=dir`, computed here independently of the app.
+fileprivate func contextService(_ dir: String) -> String {
+    claudeService + "-" + SHA256.hash(data: Data(dir.utf8)).map { String(format: "%02x", $0) }.joined().prefix(8)
+}
 
 fileprivate func claudeItem(_ tag: String, mcp: String? = nil, plugin: String? = nil) -> String {
     let mcpJSON = mcp.map { #","mcpOAuth":{"srv":{"accessToken":"\#($0)"}}"# } ?? ""
@@ -712,5 +718,136 @@ fileprivate final class Fixture: @unchecked Sendable {
     @Test func `the standard Claude lock timing`() {
         let t = ClaudeLockTiming.standard
         #expect(t.budget == .seconds(9) && t.poll == .milliseconds(250) && t.refreshStale == 60 && t.configStale == 10)
+    }
+
+    // MARK: Contexts
+
+    private func claudeContext(_ f: Fixture, _ tag: String) async throws -> ToolContext {
+        let dir = f.box.root.appending(path: "claude-work")
+        try f.box.write("claude-work/.claude.json", claudeConfig(claudeAccount(tag)))
+        #expect(await f.box.keychain.write(service: contextService(dir.path), account: "tester", value: utf8(claudeItem(tag))) == .written)
+        return ToolContext(tool: .claude, path: dir.path, name: "Work")
+    }
+
+    private func liveKey(_ f: Fixture, _ context: ToolContext) async -> String? {
+        let reader: any ToolAdapter = context.tool == .claude ? ClaudeTool(env: f.box.env) : CodexTool(env: f.box.env)
+        if case .signedIn(let login) = await reader.scoped(to: context).readLive() { return login.identity.key }
+        return nil
+    }
+
+    @Test func `REQ/F09-AC-9.c1 a switch in a Claude context writes its own Keychain item and .claude.json under its own locks, the default untouched`() async throws {
+        let f = try Fixture()
+        try await f.seedClaude("b")
+        let target = try await f.saveLive(.claude)
+        try await f.seedClaude("a")
+        let work = try await claudeContext(f, "c")
+        let dir = work.path!
+        let locks = [URL(fileURLWithPath: dir + "/.oauth_refresh.lock"), URL(fileURLWithPath: dir + ".lock"), URL(fileURLWithPath: dir + "/.claude.json.lock")]
+        var env = f.box.env
+        let probe = LockProbe(f.box.env.security, locks: locks)
+        env.security = probe
+        let outcome = await f.switcher(env: env).switchTo(target, in: work)
+        #expect(outcome == .switched(notice: "Claude Code (Work) now signs in as b@example.com. New sessions use it; running ones follow within about 30 s.", daemonRunning: false))
+        #expect(probe.heldAtFirstRead == true)
+        #expect(locks.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
+        #expect(await liveKey(f, work) == "claude:b@example.com:org-b")
+        #expect(try String(contentsOf: URL(fileURLWithPath: dir + "/.claude.json"), encoding: .utf8) == claudeConfig(claudeAccount("b")))
+        #expect(await f.liveKey(.claude) == "claude:a@example.com:org-a")
+        #expect(try String(contentsOf: f.configURL, encoding: .utf8) == claudeConfig(claudeAccount("a")))
+        // The outgoing context login was kept like any other.
+        let kept = Identity.claude(email: "c@example.com", organizationUuid: "org-c", refreshToken: nil).fileID
+        guard case .valid(let entry)? = await f.vault.entry(.claude, id: kept) else { Issue.record("outgoing login not kept"); return }
+        #expect(entry.kept)
+        #expect(f.box.violations.isEmpty)
+    }
+
+    @Test func `REQ/F09-AC-9.c3 switching an account live in another context is refused, naming that context, and writes nothing`() async throws {
+        let f = try Fixture()
+        try await f.seedClaude("b")
+        let target = try await f.saveLive(.claude)
+        let work = try await claudeContext(f, "a")
+        let contexts = [ToolContext.default(.claude), work]
+        let writesBefore = f.writes.count
+        #expect(await f.switcher().switchTo(target, in: work, alongside: contexts) == .refused(
+            "b@example.com is already live in Default. To use it here too, sign in with Claude Code itself: one login copied into two contexts signs one of them out. Nothing was written."))
+        #expect(f.writes.count == writesBefore)
+        #expect(await liveKey(f, work) == "claude:a@example.com:org-a")
+        // Once the default moves on, the same switch goes through.
+        try await f.seedClaude("c")
+        guard case .switched = await f.switcher().switchTo(target, in: work, alongside: contexts) else { Issue.record("switch refused"); return }
+        #expect(await liveKey(f, work) == "claude:b@example.com:org-b")
+    }
+
+    @Test func `REQ/F09-AC-9.c7 a Claude context keeps its own switch journal, settled at launch`() async throws {
+        let f = try Fixture()
+        try await f.seedClaude("b")
+        let target = try await f.saveLive(.claude)
+        let work = try await claudeContext(f, "a")
+        let suffix = contextService(work.path!).dropFirst(claudeService.count)
+        let journal = f.box.supportRoot.appending(path: "vault/claude-switch\(suffix).json")
+        try #"{"target":"\#(target.id)","keychainBefore":"\#(sha256Hex(utf8(claudeItem("a"))))","accountBefore":"\#(sha256Hex(utf8(claudeAccount("a"))))"}"#
+            .write(to: journal, atomically: true, encoding: .utf8)
+        // The app quit between the context's two writes: its Keychain item holds b, its config still names a.
+        #expect(await f.box.keychain.write(service: contextService(work.path!), account: "tester", value: utf8(claudeItem("b"))) == .written)
+        await f.switcher().settleInterruptedSwitch()
+        #expect(FileManager.default.fileExists(atPath: journal.path))
+        await f.switcher().settleInterruptedSwitch(contexts: [.default(.claude), work])
+        #expect(await liveKey(f, work) == "claude:b@example.com:org-b")
+        #expect(!FileManager.default.fileExists(atPath: journal.path))
+        #expect(await f.liveKey(.claude) == "claude:b@example.com:org-b")
+    }
+
+    @Test func `REQ/F09-AC-9.c2 a Codex context's switch writes its own auth.json and reports only the daemon its home recorded`() async throws {
+        let f = try Fixture()
+        try f.seedCodex("b")
+        let target = try await f.saveLive(.codex)
+        try f.seedCodex("a")
+        let work = ToolContext(tool: .codex, path: f.box.root.appending(path: "codex-work").path, name: "Work")
+        try f.box.write("codex-work/auth.json", codexAuth("c"))
+        let lines = ["77 /opt/homebrew/bin/codex app-server --managed-daemon"]
+        #expect(await f.switcher(lines: lines).switchTo(target, in: work) == .switched(notice: "Codex (Work) now signs in as b@example.com.", daemonRunning: false))
+        #expect(await liveKey(f, work) == "codex:b@example.com:acct-b")
+        #expect(await f.liveKey(.codex) == "codex:a@example.com:acct-a")
+        try f.box.write("codex-work/app-server-daemon/daemon.pid", #"{"pid":77,"processStartTime":"x"}"#)
+        let kept = AccountKey(tool: .codex, id: Identity.codex(email: "c@example.com", accountID: "acct-c", refreshToken: nil).fileID)
+        #expect(await f.switcher(lines: lines).switchTo(kept, in: work) == .switched(notice: "Codex (Work) now signs in as c@example.com.", daemonRunning: true))
+    }
+
+    @Test func `REQ/F09-AC-9.c2 a Codex home's daemon is the one its daemon.pid records; without one only the default home takes any`() throws {
+        let box = try TestSandbox(security: ScriptedSecurity([.timedOut]))
+        let home = box.root.appending(path: "codex-work")
+        let lines = ["77 /opt/homebrew/bin/codex app-server --managed-daemon", "88 /tmp/codex app-server --managed-daemon"]
+        #expect(CodexProcesses.daemonPID(lines, codexHome: home, orAny: false) == nil)
+        #expect(CodexProcesses.daemonPID(lines, codexHome: home, orAny: true) == 77)
+        try box.write("codex-work/app-server-daemon/daemon.pid", #"{"pid":88,"processStartTime":"x"}"#)
+        #expect(CodexProcesses.daemonPID(lines, codexHome: home, orAny: false) == 88)
+        #expect(CodexProcesses.daemonPID(lines, codexHome: home) == 88)
+        // A recorded daemon that no longer runs: none, even for the default home.
+        try box.write("codex-work/app-server-daemon/daemon.pid", #"{"pid":99}"#)
+        #expect(CodexProcesses.daemonPID(lines, codexHome: home) == nil)
+        #expect(!CodexProcesses.daemonRunning(lines, codexHome: home))
+    }
+
+    @Test func `REQ/F09-AC-9.c3 another context's unreadable login pauses the switch; a named context's notices carry its name`() async throws {
+        let f = try Fixture()
+        try f.seedCodex("b")
+        let target = try await f.saveLive(.codex)
+        try f.seedCodex("a")
+        let work = ToolContext(tool: .codex, path: f.box.root.appending(path: "codex-work").path, name: "Work")
+        try f.box.write("codex-work/auth.json", codexAuth("c"))
+        // An unreadable config.toml makes the default context unknown.
+        let broken = f.box.codexHome.appending(path: "config.toml")
+        try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
+        let writesBefore = f.writes.count
+        let authBefore = try Data(contentsOf: f.box.root.appending(path: "codex-work/auth.json"))
+        #expect(await f.switcher().switchTo(target, in: work, alongside: [.default(.codex), work])
+            == .refused("Default's login can't be read right now, so switching Codex (Work) is paused. Nothing was written — retry in a moment."))
+        #expect(f.writes.count == writesBefore)
+        #expect(try Data(contentsOf: f.box.root.appending(path: "codex-work/auth.json")) == authBefore)
+        try FileManager.default.removeItem(at: broken)
+        // The desktop app runs from the default home, so a named context's switch doesn't mention it.
+        let desktop = "90 /Applications/Codex.app/Contents/Resources/codex app-server"
+        #expect(await f.switcher(lines: [desktop]).switchTo(target, in: work, alongside: [.default(.codex), work])
+            == .switched(notice: "Codex (Work) now signs in as b@example.com.", daemonRunning: false))
     }
 }

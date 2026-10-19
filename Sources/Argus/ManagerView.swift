@@ -56,6 +56,10 @@ struct ManagerView: View {
     @State private var selected: Tool = .claude
     @State private var saveBanner: [Tool: (text: String, problem: Bool)] = [:]
     @State private var tableWidth: CGFloat = 780
+    /// The add-context row's fields and its last refusal.
+    @State private var newContextName = ""
+    @State private var newContextPath = ""
+    @State private var contextError: String?
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -79,7 +83,12 @@ struct ManagerView: View {
         .toolbar { toolbar(t) }
         .foregroundStyle(t.text)
         .background(t.win)
-        .onChange(of: selected) { commands.closeUndo() }
+        .onChange(of: selected) {
+            commands.closeUndo()
+            newContextName = ""
+            newContextPath = ""
+            contextError = nil
+        }
     }
 
     // MARK: Toolbar
@@ -163,7 +172,12 @@ struct ManagerView: View {
                     HStack(spacing: 12) {
                         ToolMark(tool: selected, size: 32)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(selected.displayName).font(.system(size: 18, weight: .bold))
+                            HStack(spacing: 8) {
+                                Text(selected.displayName).font(.system(size: 18, weight: .bold))
+                                if !card.contexts.isEmpty {
+                                    ContextPicker(context: card.context, contexts: card.contexts, theme: t, select: commands.selectContext)
+                                }
+                            }
                             Text(ManagerText.header(snapshot)).font(.system(size: 12)).foregroundStyle(t.sub)
                         }
                         Spacer()
@@ -226,6 +240,7 @@ struct ManagerView: View {
                         .padding(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 6)).background(t.soft, in: RoundedRectangle(cornerRadius: 9))
                     }
                     table(t, rows: rows, availableWidth: proxy.size.width - 48)
+                    if selected.supportsContexts { contexts(t, snapshot) }
                 }
                 .padding(.horizontal, 24).padding(.vertical, 22)
             }
@@ -262,6 +277,83 @@ struct ManagerView: View {
     }
 }
 
+extension ManagerView {
+    /// The tool's contexts: each with its live login and Select / Remove, then a row to add one.
+    private func contexts(_ t: Theme, _ snapshot: ToolSnapshot) -> some View {
+        let variable = selected == .codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("CONTEXTS").font(.system(size: 10.5, weight: .semibold)).kerning(0.4).foregroundStyle(t.ter)
+                Spacer()
+                Text("Folders \(selected.displayName) runs from, chosen by \(variable). Saved accounts are shared by all.")
+                    .font(.system(size: 11)).foregroundStyle(t.ter).lineLimit(1)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 8).background(t.thead)
+            ForEach(snapshot.contexts) { context in
+                HStack(spacing: Columns.gap) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(context.name).font(.system(size: 13, weight: .medium))
+                        Text(context.assignment ?? "\(variable) unset").font(.system(size: 11, design: .monospaced)).foregroundStyle(t.sub)
+                            .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    let shared = state.sharesLogin(context)
+                    Text(ManagerText.contextStatus(state.live[selected]?[context.id], context: context, sharedWith: shared))
+                        .font(.system(size: 12)).foregroundStyle(shared == nil ? t.sub : t.warnText).lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        if context.id == snapshot.context.id {
+                            Text("Selected").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(t.liveText)
+                                .padding(.horizontal, 9).frame(height: 24).background(t.liveBg, in: Capsule())
+                        } else {
+                            PillButton(title: "Select", fill: t.chip, foreground: t.text) { commands.selectContext(context) }
+                                .help("Show, save and switch this context")
+                        }
+                        Button { Task { contextError = await commands.removeContext(context) } } label: {
+                            Image(systemName: "trash").font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 26)
+                        }
+                        .buttonStyle(.plain).foregroundStyle(t.sub).disabled(context.isDefault).opacity(context.isDefault ? 0 : 1)
+                        .help("Forget this context; its folder and logins stay").accessibilityLabel("Remove context \(context.name)")
+                    }
+                    .frame(width: Columns.actions)
+                }
+                .padding(.horizontal, Columns.inset).padding(.vertical, 10)
+                .overlay(alignment: .top) { t.hair.frame(height: 1) }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    TextField("Name (optional)", text: $newContextName).textFieldStyle(.roundedBorder).frame(width: 150)
+                    TextField("\(variable), e.g. ~/.\(selected == .codex ? "codex" : "claude")-work", text: $newContextPath)
+                        .textFieldStyle(.roundedBorder).font(.system(size: 12, design: .monospaced))
+                    Button("Choose…") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.showsHiddenFiles = true
+                        if panel.runModal() == .OK, let url = panel.url { newContextPath = url.path }
+                    }
+                    PillButton(title: "Add", fill: t.ok, disabled: newContextPath.trimmingCharacters(in: .whitespaces).isEmpty) {
+                        let tool = selected
+                        Task {
+                            contextError = await commands.addContext(tool, path: newContextPath, name: newContextName)
+                            if contextError == nil { newContextName = ""; newContextPath = "" }
+                        }
+                    }
+                }
+                if let contextError {
+                    Text(contextError).font(.system(size: 12)).foregroundStyle(t.warnText)
+                }
+            }
+            .padding(.horizontal, Columns.inset).padding(.vertical, 10)
+            .overlay(alignment: .top) { t.hair.frame(height: 1) }
+        }
+        .frame(maxWidth: .infinity)
+        .background(t.tableCard).clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(t.hair, lineWidth: 1))
+    }
+}
+
 /// Table columns in the design's 1.25 : 1 : 1 ratio beside a 140 pt action column.
 private struct Columns {
     static let gap: CGFloat = 20, actions: CGFloat = 140, inset: CGFloat = 16
@@ -291,6 +383,7 @@ private struct ManagerRowView: View {
                 HStack(spacing: 6) {
                     if let plan = row.plan, !plan.isEmpty { Chip(text: plan, theme: t) }
                     if !row.isSaved { Chip(text: "Not saved", theme: t) }
+                    if !row.liveElsewhere.isEmpty { Chip(text: "Live in \(row.liveElsewhere.joined(separator: ", "))", theme: t) }
                     let problem = PopoverText.problem(tool: tool, error: row.error, retryAt: row.retryAt, now: .now, timeZone: .current)
                     ForEach(Array(row.badges.enumerated()), id: \.offset) { item in
                         if case .stale(let age) = item.element {

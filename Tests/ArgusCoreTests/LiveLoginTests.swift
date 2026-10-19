@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 import ArgusCore
@@ -72,8 +73,8 @@ fileprivate final class ConfigChangingSecurity: SecurityRunning, @unchecked Send
         #expect(login.identity.email == "other@example.com")
     }
 
-    @Test func `REQ/F01-AC-1.c1 Claude reads the Keychain under the login name as is, claude-code-user only when there is none`() async throws {
-        for (user, account) in [("name with space", "name with space"), ("o'neil", "o'neil"), ("", "claude-code-user")] {
+    @Test func `REQ/F01-AC-1.c1 Claude reads the Keychain under the login name when Claude Code accepts it, else claude-code-user`() async throws {
+        for (user, account) in [("a.b_c-9", "a.b_c-9"), ("name with space", "claude-code-user"), ("o'neil", "claude-code-user"), ("", "claude-code-user")] {
             let box = try TestSandbox()
             var env = box.env
             env.user = user
@@ -298,5 +299,60 @@ fileprivate final class ConfigChangingSecurity: SecurityRunning, @unchecked Send
         #expect(await box.keychain.write(service: "gemini", account: "antigravity", value: utf8(agyValue(agyJSON(idToken: idToken, access: "", refresh: "")))) == .written)
         #expect(await AgyTool(env: box.env).readLive() == .wiped)
         #expect(box.violations.isEmpty)
+    }
+
+    // MARK: Contexts
+
+    /// Claude Code's item name for `CLAUDE_CONFIG_DIR=dir`, computed here independently of the app.
+    private func contextService(_ dir: String) -> String {
+        let digest = SHA256.hash(data: Data(dir.precomposedStringWithCanonicalMapping.utf8)).map { String(format: "%02x", $0) }.joined()
+        return claudeService + "-" + digest.prefix(8)
+    }
+
+    @Test func `REQ/F09-AC-9.c1 a Claude context reads the Keychain item named for its exact path and its own .claude.json`() async throws {
+        let box = try TestSandbox()
+        let dir = box.root.appending(path: "claude-work").path
+        try box.write("claude-work/.claude.json", claudeConfig(aliceAccount))
+        #expect(await box.keychain.write(service: contextService(dir), account: "tester", value: utf8(claudeItem)) == .written)
+        let work = ToolContext(tool: .claude, path: dir, name: "work")
+        guard case .signedIn(let login) = await ClaudeTool(env: box.env).scoped(to: work).readLive() else { Issue.record("context not signed in"); return }
+        #expect(login.identity.key == "claude:alice@example.com:org-1")
+        // The default context still reads the plain item and ~/.claude.json.
+        #expect(await ClaudeTool(env: box.env).readLive() == .notSignedIn)
+        #expect(await ClaudeTool(env: box.env).scoped(to: .default(.claude)).readLive() == .notSignedIn)
+        #expect(box.violations.isEmpty)
+    }
+
+    @Test func `REQ/F09-AC-9.c1 a trailing slash or an explicit ~ claude folder is another Claude login, and the path is NFC-normalised`() async throws {
+        let box = try TestSandbox()
+        try box.write("home/.claude.json", claudeConfig(aliceAccount))
+        #expect(await box.keychain.write(service: claudeService, account: "tester", value: utf8(claudeItem)) == .written)
+        let explicitDefault = ToolContext(tool: .claude, path: box.home.appending(path: ".claude").path, name: "explicit")
+        try box.write("home/.claude/.claude.json", claudeConfig(aliceAccount))
+        #expect(await ClaudeTool(env: box.env).scoped(to: explicitDefault).readLive() == .notSignedIn)
+
+        let dir = box.root.appending(path: "work").path
+        try box.write("work/.claude.json", claudeConfig(aliceAccount))
+        #expect(await box.keychain.write(service: contextService(dir), account: "tester", value: utf8(claudeItem)) == .written)
+        #expect(await ClaudeTool(env: box.env).scoped(to: ToolContext(tool: .claude, path: dir + "/", name: "slash")).readLive() == .notSignedIn)
+
+        // "e" + combining acute names the same item as the precomposed "é".
+        let composed = box.root.appending(path: "caf\u{E9}").path, decomposed = box.root.path + "/cafe\u{301}"
+        try box.write("caf\u{E9}/.claude.json", claudeConfig(aliceAccount))
+        #expect(await box.keychain.write(service: contextService(composed), account: "tester", value: utf8(claudeItem)) == .written)
+        guard case .signedIn = await ClaudeTool(env: box.env).scoped(to: ToolContext(tool: .claude, path: decomposed, name: "nfd")).readLive() else {
+            Issue.record("decomposed path missed the item"); return
+        }
+        #expect(box.violations.isEmpty)
+    }
+
+    @Test func `REQ/F09-AC-9.c2 a Codex context reads auth.json in its own home and agy has one live login whatever the context`() async throws {
+        let box = try TestSandbox()
+        try box.write("codex-work/auth.json", codexAuth(email: "work@example.com", accountID: "acct-w"))
+        let work = ToolContext(tool: .codex, path: box.root.appending(path: "codex-work").path, name: "work")
+        guard case .signedIn(let login) = await CodexTool(env: box.env).scoped(to: work).readLive() else { Issue.record("context not signed in"); return }
+        #expect(login.identity.key == "codex:work@example.com:acct-w")
+        #expect(await CodexTool(env: box.env).readLive() == .notSignedIn)
+        #expect(!Tool.agy.supportsContexts && Tool.claude.supportsContexts && Tool.codex.supportsContexts)
     }
 }

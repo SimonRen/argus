@@ -78,6 +78,8 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
     public let error: String?
     public let retryAt: Date?
     public let isLive: Bool
+    /// The names of the tool's other contexts it is live in.
+    public let liveElsewhere: [String]
     public let isSaved: Bool
     public let badges: [RowBadge]
     public let groups: [GroupRow]
@@ -99,6 +101,7 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
         error = account.error
         retryAt = account.retryAt
         isLive = account.isLive
+        liveElsewhere = account.liveElsewhere
         isSaved = account.isSaved
         var badges: [RowBadge] = []
         if account.stale, let reading = account.reading {
@@ -145,15 +148,20 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
         banner = blocked.map { .blocked($0.1) } ?? (windows.isEmpty ? .notFetched : nil)
         if let live, !live.allowsSwitch {
             switchDisabledReason = live.statusText(account.key.tool)
+        } else if !account.isLive, !account.liveElsewhere.isEmpty {
+            // One login in two contexts: whichever renews first signs the other out.
+            switchDisabledReason = "Live in \(account.liveElsewhere.joined(separator: ", "))"
         } else {
             switchDisabledReason = blocked?.1
         }
         refreshEnabled = account.isLive || blocked == nil
     }
 
-    /// The line under the popover name: the plan, then "live" for the live account ("Max · live").
+    /// The line under the popover name: the plan, then "live" for the live account ("Max · live"), or the other
+    /// contexts it is live in ("Max · live in Work").
     public var subtitle: String {
-        [plan.flatMap { $0.isEmpty ? nil : $0.capitalized }, isLive ? "live" : nil].compactMap { $0 }.joined(separator: " · ")
+        let live = isLive ? "live" : liveElsewhere.isEmpty ? nil : "live in \(liveElsewhere.joined(separator: ", "))"
+        return [plan.flatMap { $0.isEmpty ? nil : $0.capitalized }, live].compactMap { $0 }.joined(separator: " · ")
     }
 
     /// The badges the popover keeps beside the plan: only "Kept". Blocked and never-fetched show as the `banner`; a stale reading's
@@ -198,6 +206,9 @@ public struct ToolCard: Sendable, Equatable {
     public let columns: [String]
     public let suggestion: Suggestion?
     public let unsavedBanner: String?
+    /// The selected context, and the contexts its picker offers: empty while the tool has only the default.
+    public let context: ToolContext
+    public let contexts: [ToolContext]
 
     public static func build(_ snapshot: ToolSnapshot, expanded: Bool, dismissedUnsavedKey: String?, now: Date) -> ToolCard {
         let live = snapshot.accounts.first(where: \.isLive)
@@ -208,7 +219,7 @@ public struct ToolCard: Sendable, Equatable {
         var suggestion: Suggestion?
         if let live, !live.stale, let score = AccountRow.score(live), Int(score.rounded()) < 15 {
             var best: (AccountSnapshot, Double)?
-            for account in rest where account.isSaved && !account.stale && account.flag == .ok {
+            for account in rest where account.isSaved && !account.stale && account.flag == .ok && account.liveElsewhere.isEmpty {
                 if let s = AccountRow.score(account), s > (best?.1 ?? -1) { best = (account, s) }
             }
             if let (account, s) = best, Int(s.rounded()) >= 40 {
@@ -230,7 +241,8 @@ public struct ToolCard: Sendable, Equatable {
         }
         return ToolCard(tool: snapshot.tool, liveRow: rows.first(where: \.isLive), liveStatusText: statusText,
                         others: others, rows: rows, moreLabel: others.isEmpty ? nil : expanded ? "Live only" : "+\(others.count) more",
-                        columns: columns.isEmpty ? ["5h", "7d"] : columns, suggestion: suggestion, unsavedBanner: unsaved)
+                        columns: columns.isEmpty ? ["5h", "7d"] : columns, suggestion: suggestion, unsavedBanner: unsaved,
+                        context: snapshot.context, contexts: snapshot.contexts.count > 1 ? snapshot.contexts : [])
     }
 }
 

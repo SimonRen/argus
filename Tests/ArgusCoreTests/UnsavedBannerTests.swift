@@ -109,7 +109,7 @@ import ArgusCore
             let gate = TestGate()
             let switcher = Switcher(env: rig.box.env, vault: rig.vault, processes: ProcessListing { ["77 /opt/homebrew/bin/codex app-server --managed-daemon"] })
             let cmds = AccountCommands(state: rig.state, poller: rig.poller, vault: rig.vault, tools: Tool.allCases.map { rig.tools[$0]! },
-                                       switcher: switcher, restartDaemon: { await gate.wait(); return failure })
+                                       switcher: switcher, restartDaemon: { _ in await gate.wait(); return failure })
             let switching = Task { await cmds.switchTo(AccountKey(tool: .codex, id: target.identity.fileID)) }
             while cmds.notice == nil { await Task.yield() }
             #expect(cmds.notice == lead + " Restarting the Codex app-server so open sessions move over; a running reply gets up to a minute to finish.")

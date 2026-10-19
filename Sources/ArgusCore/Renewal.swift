@@ -56,16 +56,16 @@ public actor Renewer {
     }
 
     /// Runs in the tool's exclusive section; once sent, the request completes and its result is persisted even if the
-    /// caller goes away.
-    public func renew(_ key: AccountKey, trigger: RenewalTrigger, vault: Vault) async -> RenewalOutcome {
+    /// caller goes away. `contexts` are the tool's contexts whose live logins it must not touch; none: the default only.
+    public func renew(_ key: AccountKey, trigger: RenewalTrigger, vault: Vault, contexts: [ToolContext] = []) async -> RenewalOutcome {
         do {
-            return try await vault.exclusive(key.tool) { await self.renewInSection(key, trigger, vault) }
+            return try await vault.exclusive(key.tool) { await self.renewInSection(key, trigger, vault, contexts) }
         } catch {
             return .transient("interrupted")
         }
     }
 
-    private func renewInSection(_ key: AccountKey, _ trigger: RenewalTrigger, _ vault: Vault) async -> RenewalOutcome {
+    private func renewInSection(_ key: AccountKey, _ trigger: RenewalTrigger, _ vault: Vault, _ contexts: [ToolContext]) async -> RenewalOutcome {
         if let pending = unsaved[key] {
             guard (try? await vault.replacePayload(key.tool, id: key.id, bytes: pending, origin: .renewal)) != nil else {
                 return .transient("couldn't save the renewed login")
@@ -74,18 +74,23 @@ public actor Renewer {
             return .renewed
         }
         guard let adapter = tools[key.tool] else { return .skipped("no live reader") }
-        let live = await adapter.readLive()
-        switch live {
-        case .unknown, .unsupported: return .skipped("live login unreadable")
-        case .signedIn(let live) where !live.identity.isComplete: return .skipped("live identity incomplete")
-        case .signedIn(let live) where live.identity.fileID == key.id: return .skipped("live account")
-        default: break
+        // Every context's live login: an account live in any of them is its tool's to renew.
+        var lives: [LiveLogin] = []
+        for reader in contexts.isEmpty ? [adapter] : contexts.map(adapter.scoped) {
+            switch await reader.readLive() {
+            case .unsupported(CodexTool.apiKeyOnly): break
+            case .unknown, .unsupported: return .skipped("live login unreadable")
+            case .signedIn(let live) where !live.identity.isComplete: return .skipped("live identity incomplete")
+            case .signedIn(let live) where live.identity.fileID == key.id: return .skipped("live account")
+            case .signedIn(let live): lives.append(live)
+            default: break
+            }
         }
         guard case .valid(let envelope)? = await vault.entry(key.tool, id: key.id) else { return .skipped("entry gone or unreadable") }
         guard envelope.identity.isComplete, let payload = envelope.payloadBytes else { return .skipped("entry incomplete") }
         let tokens = tokenSet(key.tool, bytes: payload)
         // The tool may be running on these very tokens under another account's name; renewing would spend its token.
-        if case .signedIn(let login) = live, let refresh = tokens?.refreshToken, login.tokens.refreshToken == refresh {
+        if let refresh = tokens?.refreshToken, lives.contains(where: { $0.tokens.refreshToken == refresh }) {
             return .skipped("token is live")
         }
         guard (tokens?.accessToken ?? "") == trigger.accessToken else { return .skipped("token already replaced") }

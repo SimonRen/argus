@@ -11,17 +11,32 @@ public struct ClaudeTool: ToolAdapter {
         self.env = env
     }
 
-    /// The user name as is, as Claude Code reads it; `claude-code-user` only when there is none.
-    var keychainAccount: String {
-        env.user.isEmpty ? "claude-code-user" : env.user
+    public func scoped(to context: ToolContext) -> any ToolAdapter { ClaudeTool(env: env.scoped(to: context)) }
+
+    /// The Keychain item: with `CLAUDE_CONFIG_DIR` set, suffixed with the first 8 hex of the SHA-256 of its exact value
+    /// (NFC), as Claude Code names it; `~/.claude` set explicitly is a different item from the variable unset.
+    var service: String {
+        guard let dir = env.claudeConfigDir else { return Self.service }
+        return Self.service + "-" + sha256Hex(Data(dir.precomposedStringWithCanonicalMapping.utf8)).prefix(8)
     }
 
-    /// `.claude/.config.json` when it is a regular file with content, or an empty writable one while `.claude.json`
-    /// is absent; else `.claude.json`.
+    /// `CLAUDE_CONFIG_DIR`, else `~/.claude`.
+    var configHome: URL {
+        env.claudeConfigDir.map { URL(fileURLWithPath: $0.precomposedStringWithCanonicalMapping, isDirectory: true) }
+            ?? env.home.appending(path: ".claude", directoryHint: .isDirectory)
+    }
+
+    /// The user name when Claude Code accepts it as is (letters, digits, `.`, `_`, `-`); `claude-code-user` otherwise.
+    var keychainAccount: String {
+        env.user.wholeMatch(of: /[a-zA-Z0-9._-]+/) != nil ? env.user : "claude-code-user"
+    }
+
+    /// `.config.json` in the config home when it is a regular file with content, or an empty writable one while
+    /// `.claude.json` is absent; else `.claude.json` (in `CLAUDE_CONFIG_DIR` when set, else the home folder).
     var configURL: URL {
         let fm = FileManager.default
-        let alternate = env.home.appending(path: ".claude/.config.json")
-        let primary = env.home.appending(path: ".claude.json")
+        let alternate = configHome.appending(path: ".config.json")
+        let primary = (env.claudeConfigDir.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? env.home).appending(path: ".claude.json")
         let path = alternate.resolvingSymlinksInPath().path
         let attrs = try? fm.attributesOfItem(atPath: path)
         guard attrs?[.type] as? FileAttributeType == .typeRegular else { return primary }
@@ -39,7 +54,7 @@ public struct ClaudeTool: ToolAdapter {
 
     public func readLive() async -> LiveState {
         let before = readAccount()
-        let read = await env.keychainClient.read(service: Self.service, account: keychainAccount)
+        let read = await env.keychainClient.read(service: service, account: keychainAccount)
         let after = readAccount()
         let bytes: Data
         switch read {

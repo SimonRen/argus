@@ -30,6 +30,30 @@ public enum ManagerText {
         return "Signed in as \(email)\(isSaved ? "" : " — not saved")"
     }
 
+    /// A context row's status: its live login as last read. A named context without one hints that the variable must
+    /// match the path exactly; one sharing its login with `sharedWith` (a copied folder) says what that costs.
+    public static func contextStatus(_ live: LiveState?, context: ToolContext, sharedWith: ToolContext? = nil) -> String {
+        switch live {
+        case nil: return "Not read yet"
+        case .signedIn(let login)? where !login.identity.isComplete:
+            return "Signed in, but its account can't be read — " + paused(context.tool)
+        case .signedIn(let login)?:
+            let signedIn = "Signed in as \(login.label.isEmpty ? "Unknown account" : login.label)"
+            guard let sharedWith else { return signedIn }
+            return signedIn + " — the same login as \(sharedWith.name): whichever renews first signs the other out. Sign in again in one of them."
+        case .notSignedIn? where !context.isDefault:
+            return "Not signed in · \(context.tool == .codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR") must be exactly this path"
+        case .unsupported(CodexTool.apiKeyOnly)?: return "Signed in with an API key, which Argus doesn't manage"
+        case .unsupported?: return "Unsupported storage mode — " + paused(context.tool)
+        case let state?: return state.statusText(context.tool) ?? ""
+        }
+    }
+
+    /// Renewal waits while any context's login is unreadable: it might be a saved account's.
+    private static func paused(_ tool: Tool) -> String {
+        "saved \(tool.displayName) accounts aren't renewed meanwhile"
+    }
+
     public static let emptyTitle = "No saved accounts"
 
     public static func emptyHint(_ tool: Tool) -> String {

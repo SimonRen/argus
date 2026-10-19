@@ -117,7 +117,8 @@ struct PopoverView: View {
         CardView.Actions(
             toggle: { if expanded.contains(tool) { expanded.remove(tool) } else { expanded.insert(tool) } },
             switchTo: { key in Task { await commands.switchTo(key) } },
-            refresh: { key in await commands.refresh(key) })
+            refresh: { key in await commands.refresh(key) },
+            selectContext: commands.selectContext)
     }
 }
 
@@ -133,6 +134,7 @@ struct CardView: View {
         let toggle: () -> Void
         let switchTo: (AccountKey) -> Void
         let refresh: @MainActor (AccountKey) async -> Void
+        let selectContext: (ToolContext) -> Void
     }
 
     let card: ToolCard
@@ -145,6 +147,9 @@ struct CardView: View {
             HStack(spacing: 8) {
                 ToolMark(tool: card.tool, size: 18)
                 Text(card.tool.displayName).font(.system(size: 12.5, weight: .semibold))
+                if !card.contexts.isEmpty {
+                    ContextPicker(context: card.context, contexts: card.contexts, theme: t, select: actions.selectContext)
+                }
                 Spacer()
                 if let more = card.moreLabel {
                     Button(action: actions.toggle) {
@@ -350,6 +355,35 @@ struct ToolMark: View {
             Text(tool.letter).font(.system(size: size * 0.55, weight: .bold)).foregroundStyle(.white)
                 .frame(width: size, height: size).background(Theme.accent(tool), in: RoundedRectangle(cornerRadius: size * 0.28))
         }
+    }
+}
+
+/// A tool's context menu: the selected context's name as a chip, the tool's contexts checked in its menu.
+struct ContextPicker: View {
+    let context: ToolContext
+    let contexts: [ToolContext]
+    let theme: Theme
+    let select: (ToolContext) -> Void
+
+    var body: some View {
+        Menu {
+            Picker("\(context.tool.displayName) context", selection: Binding(get: { context.id }, set: { id in
+                if let picked = contexts.first(where: { $0.id == id }) { select(picked) }
+            })) {
+                ForEach(contexts) { Text($0.name).tag($0.id) }
+            }
+            .pickerStyle(.inline).labelsHidden()
+        } label: {
+            HStack(spacing: 3) {
+                Text(context.name).lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 7.5, weight: .bold))
+            }
+            .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(theme.sub)
+            .padding(.horizontal, 6).frame(height: 18).background(theme.chip, in: Capsule())
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        .help(context.assignment ?? "\(context.tool.displayName)'s default folder")
+        .accessibilityLabel("\(context.tool.displayName) context: \(context.name)")
     }
 }
 

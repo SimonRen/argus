@@ -6,21 +6,25 @@ public struct CodexTool: ToolAdapter {
     let env: ToolEnvironment
 
     static let keyringService = "Codex Auth"
+    /// The unsupported reason for a login with no refresh token (an API key): it can't share one with a saved account.
+    static let apiKeyOnly = "an API-key sign-in"
 
     public init(env: ToolEnvironment) {
         self.env = env
     }
 
-    var authURL: URL { env.codexHome.appending(path: "auth.json") }
+    public func scoped(to context: ToolContext) -> any ToolAdapter { CodexTool(env: env.scoped(to: context)) }
+
+    var authURL: URL { env.liveCodexHome.appending(path: "auth.json") }
 
     /// Codex's own Keychain account for this `CODEX_HOME`.
     var keyringAccount: String {
-        "cli|" + sha256Hex(Data(env.codexHome.resolvingSymlinksInPath().path.utf8)).prefix(16)
+        "cli|" + sha256Hex(Data(env.liveCodexHome.resolvingSymlinksInPath().path.utf8)).prefix(16)
     }
 
     /// Top-level `cli_auth_credentials_store`; `file` when the file or key is absent, nil when the file can't be read.
     func storeMode() -> String? {
-        let url = env.codexHome.appending(path: "config.toml")
+        let url = env.liveCodexHome.appending(path: "config.toml")
         guard FileManager.default.fileExists(atPath: url.path) else { return "file" }
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         for line in text.split(whereSeparator: \.isNewline) {
@@ -56,7 +60,9 @@ public struct CodexTool: ToolAdapter {
         guard let bytes = try? Data(contentsOf: authURL), let json = jsonObject(bytes) else {
             return .unknown("auth.json can't be parsed")
         }
-        guard json["auth_mode"] as? String == "chatgpt" else { return .unsupported("not a ChatGPT sign-in") }
+        guard json["auth_mode"] as? String == "chatgpt" else {
+            return .unsupported(tokenSet(.codex, bytes: bytes)?.refreshToken == nil ? Self.apiKeyOnly : "not a ChatGPT sign-in")
+        }
         let tokens = tokenSet(.codex, bytes: bytes) ?? TokenSet(accessToken: nil, accessTokenExpiry: nil, refreshToken: nil)
         guard tokens.accessToken != nil || tokens.refreshToken != nil else { return .wiped }
         let tokenJSON = json["tokens"] as? [String: Any] ?? [:]

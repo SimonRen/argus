@@ -56,8 +56,9 @@ public struct ProcessListing: Sendable {
 }
 
 public enum CodexProcesses {
-    public static func daemonRunning(_ lines: [String]) -> Bool {
-        lines.contains { isDaemon(arguments($0)) }
+    /// See `daemonPID`.
+    public static func daemonRunning(_ lines: [String], codexHome: URL? = nil, orAny: Bool = true) -> Bool {
+        daemonPID(lines, codexHome: codexHome, orAny: orAny) != nil
     }
 
     public static func desktopAppRunning(_ lines: [String]) -> Bool {
@@ -69,19 +70,30 @@ public enum CodexProcesses {
         }
     }
 
-    /// The pid of a running managed app-server daemon.
-    public static func daemonPID(_ lines: [String]) -> Int32? {
-        for line in lines where isDaemon(arguments(line)) {
-            if let pid = line.split(separator: " ").first.flatMap({ Int32($0) }) { return pid }
+    /// The pid of a running managed app-server daemon. Each Codex home runs its own and records its pid in
+    /// `app-server-daemon/daemon.pid`: with `codexHome` given, only the daemon it recorded counts; a home that recorded
+    /// none (a Codex too old to) takes the first running one when `orAny`. No `codexHome`: the first running one.
+    public static func daemonPID(_ lines: [String], codexHome: URL? = nil, orAny: Bool = true) -> Int32? {
+        let running = lines.filter { isDaemon(arguments($0)) }.compactMap { $0.split(separator: " ").first.flatMap { Int32($0) } }
+        if let codexHome {
+            if let recorded = recordedDaemonPID(codexHome) { return running.contains(recorded) ? recorded : nil }
+            guard orAny else { return nil }
         }
-        return nil
+        return running.first
+    }
+
+    /// `pid` from the home's `app-server-daemon/daemon.pid`; nil when absent or unreadable.
+    static func recordedDaemonPID(_ codexHome: URL) -> Int32? {
+        guard let data = try? Data(contentsOf: codexHome.appending(path: "app-server-daemon/daemon.pid")),
+              let pid = jsonObject(data)?["pid"] as? Int else { return nil }
+        return Int32(exactly: pid)
     }
 
     /// The executable of a running managed app-server daemon, as the kernel reports it for that pid (never its
     /// argument text), accepted only when it is a file named `codex` owned by root or this user and writable by no
     /// one else — it is what Restart runs.
-    public static func daemonExecutable(_ lines: [String]) -> URL? {
-        daemonPID(lines).flatMap(trustedCodex)
+    public static func daemonExecutable(_ lines: [String], codexHome: URL? = nil, orAny: Bool = true) -> URL? {
+        daemonPID(lines, codexHome: codexHome, orAny: orAny).flatMap(trustedCodex)
     }
 
     static func trustedCodex(pid: Int32) -> URL? {
@@ -129,7 +141,9 @@ public enum CodexDaemon {
 
 /// Swaps a tool's live login for a saved one, in place, inside that tool's exclusive section.
 public struct Switcher: Sendable {
-    let env: ToolEnvironment
+    private(set) var env: ToolEnvironment
+    /// The named context switched, for the notices; nil for the default.
+    private var contextName: String?
     let vault: Vault
     let processes: ProcessListing
     let lockTiming: ClaudeLockTiming
@@ -147,12 +161,22 @@ public struct Switcher: Sendable {
         self.now = now
     }
 
-    public func switchTo(_ key: AccountKey) async -> SwitchOutcome {
+    /// Switches `context` (nil: the default) to the account; refused while that account is live in another of
+    /// `alongside`, since two contexts on one login spend each other's refresh token.
+    public func switchTo(_ key: AccountKey, in context: ToolContext? = nil, alongside contexts: [ToolContext] = []) async -> SwitchOutcome {
+        let switcher = context.map(scoped) ?? self
         do {
-            return try await vault.exclusive(key.tool) { await transaction(key) }
+            return try await vault.exclusive(key.tool) { await switcher.transaction(key, alongside: contexts) }
         } catch {
             return .failed("Switch failed")
         }
+    }
+
+    private func scoped(_ context: ToolContext) -> Switcher {
+        var switcher = self
+        switcher.env = env.scoped(to: context)
+        switcher.contextName = context.isDefault ? nil : context.name
+        return switcher
     }
 
     // MARK: - Transaction
@@ -175,7 +199,7 @@ public struct Switcher: Sendable {
         }
     }
 
-    private func transaction(_ key: AccountKey) async -> SwitchOutcome {
+    private func transaction(_ key: AccountKey, alongside contexts: [ToolContext]) async -> SwitchOutcome {
         let target: VaultEnvelope
         switch await vault.entry(key.tool, id: key.id) {
         case nil: return .refused("That saved account is gone.")
@@ -187,9 +211,22 @@ public struct Switcher: Sendable {
             target = e
         }
         guard let payload = target.payloadBytes else { return .refused("Unreadable vault entry") }
+        for other in contexts where other.tool == key.tool && other.path != env.contextPaths[key.tool] {
+            switch await adapter(key.tool).scoped(to: other).readLive() {
+            case .signedIn(let login) where login.identity.key == target.identityKey:
+                let email = target.label.isEmpty ? "That account" : target.label
+                return .refused("\(email) is already live in \(other.name). To use it here too, sign in with \(key.tool.displayName) itself: "
+                    + "one login copied into two contexts signs one of them out. Nothing was written.")
+            case .unknown:
+                // It may hold the target: switching now could put one login in two contexts.
+                return .refused("\(other.name)'s login can't be read right now, so switching \(named(key.tool)) is paused. Nothing was written — retry in a moment.")
+            default:
+                break
+            }
+        }
         var held: HeldLocks?
         if key.tool == .claude {
-            held = await ClaudeLocks(home: env.home, configURL: claude.configURL, timing: lockTiming, now: now).acquire()
+            held = await ClaudeLocks(configHome: claude.configHome, configURL: claude.configURL, timing: lockTiming, now: now).acquire()
             if held == nil { return .refused("Claude Code is updating its login — try again in a moment. Nothing was written.") }
         }
         defer { held?.release() }
@@ -199,13 +236,17 @@ public struct Switcher: Sendable {
         return await swap(to: target, payload: payload)
     }
 
-    /// Finishes a Claude switch cut short by the app quitting or a failed rollback; run at launch, under Claude Code's locks.
-    public func settleInterruptedSwitch() async {
-        _ = try? await vault.exclusive(.claude) {
-            guard FileManager.default.fileExists(atPath: journalURL.path),
-                  let held = await ClaudeLocks(home: env.home, configURL: claude.configURL, timing: lockTiming, now: now).acquire() else { return }
-            defer { held.release() }
-            _ = await settleClaude()
+    /// Finishes a Claude switch cut short by the app quitting or a failed rollback, in the default context and each of
+    /// `contexts`; run at launch, under Claude Code's locks.
+    public func settleInterruptedSwitch(contexts: [ToolContext] = []) async {
+        for switcher in [self] + contexts.filter({ $0.tool == .claude && !$0.isDefault }).map(scoped) {
+            _ = try? await vault.exclusive(.claude) {
+                guard FileManager.default.fileExists(atPath: switcher.journalURL.path),
+                      let held = await ClaudeLocks(configHome: switcher.claude.configHome, configURL: switcher.claude.configURL,
+                                                   timing: lockTiming, now: now).acquire() else { return }
+                defer { held.release() }
+                _ = await switcher.settleClaude()
+            }
         }
     }
 
@@ -220,7 +261,10 @@ public struct Switcher: Sendable {
         let accountBefore: String?
     }
 
-    private var journalURL: URL { vault.vaultURL.appending(path: "claude-switch.json") }
+    /// `claude-switch.json`; a context's own is suffixed like its Keychain item.
+    private var journalURL: URL {
+        vault.vaultURL.appending(path: claude.service == ClaudeTool.service ? "claude-switch.json" : "claude-switch\(claude.service.dropFirst(ClaudeTool.service.count)).json")
+    }
 
     private func removeJournal() { try? FileManager.default.removeItem(at: journalURL) }
 
@@ -236,7 +280,7 @@ public struct Switcher: Sendable {
             return true
         }
         let keychainNow: Data?
-        switch await keychain.read(service: ClaudeTool.service, account: claude.keychainAccount) {
+        switch await keychain.read(service: claude.service, account: claude.keychainAccount) {
         case .found(let value): keychainNow = value
         case .notFound: keychainNow = nil
         case .unknown: return false
@@ -251,9 +295,12 @@ public struct Switcher: Sendable {
         return true
     }
 
+    /// The tool's name, with the context's when it isn't the default: "Claude Code (Work)".
+    private func named(_ tool: Tool) -> String { tool.displayName + (contextName.map { " (\($0))" } ?? "") }
+
     private func swap(to target: VaultEnvelope, payload: Data) async -> SwitchOutcome {
         let tool = target.tool
-        let name = tool.displayName
+        let name = named(tool)
         let live = await adapter(tool).readLive()
         switch live {
         case .unknown:
@@ -284,7 +331,7 @@ public struct Switcher: Sendable {
                 return .failed("Switch failed — \(name) still uses \(outgoing)")
             }
             if tool == .claude, await settleClaude() {
-                return .failed("Switch failed and couldn't be undone, so Claude Code now signs in as \(target.label).")
+                return .failed("Switch failed and couldn't be undone, so \(name) now signs in as \(target.label).")
             }
             return .failed("Switch failed and couldn't be fully undone — \(name)'s login may be mixed. Switch again to settle it.")
         }
@@ -316,7 +363,7 @@ public struct Switcher: Sendable {
     private func write(_ target: VaultEnvelope, payload: Data, snapshots: inout [Snapshot]) async -> (ok: Bool, claudeKeychain: Data?) {
         switch target.tool {
         case .claude:
-            let service = ClaudeTool.service, account = claude.keychainAccount
+            let service = claude.service, account = claude.keychainAccount
             guard faults.failAt != .writeClaudeKeychain, let before = await keychainSnapshot(service, account),
                   let value = Self.claudeItem(target: payload, live: before) else { return (false, nil) }
             let journal = ClaudeJournal(target: target.identity.fileID, keychainBefore: before.map(sha256Hex),
@@ -325,7 +372,7 @@ public struct Switcher: Sendable {
             snapshots.append(.keychain(service: service, account: account, before: before))
             guard await keychain.write(service: service, account: account, value: value) == .written else { return (false, nil) }
             // An existing `.credentials.json` gets the same value so running sessions see its mtime change; never created, best effort.
-            let shadow = env.home.appending(path: ".claude/.credentials.json").resolvingSymlinksInPath()
+            let shadow = claude.configHome.appending(path: ".credentials.json").resolvingSymlinksInPath()
             if case let old?? = fileSnapshot(shadow) {
                 snapshots.append(.file(shadow, before: old))
                 _ = writeFileAtomically(value, to: shadow)
@@ -336,9 +383,9 @@ public struct Switcher: Sendable {
             snapshots.append(.file(config, before: current))
             return (writeFileAtomically(spliced, to: config), value)
         case .codex:
-            try? FileManager.default.createDirectory(at: env.codexHome, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try? FileManager.default.createDirectory(at: env.liveCodexHome, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             // Through a symlink, not over it: a dotfiles-managed auth.json stays linked.
-            let auth = env.codexHome.appending(path: "auth.json").resolvingSymlinksInPath()
+            let auth = env.liveCodexHome.appending(path: "auth.json").resolvingSymlinksInPath()
             guard faults.failAt != .writeCodexAuth, let before = fileSnapshot(auth) else { return (false, nil) }
             snapshots.append(.file(auth, before: before))
             return (writeFileAtomically(payload, to: auth), nil)
@@ -420,7 +467,7 @@ public struct Switcher: Sendable {
         let ok: Bool
         switch target.tool {
         case .claude:
-            let readBack = await keychain.read(service: ClaudeTool.service, account: claude.keychainAccount)
+            let readBack = await keychain.read(service: claude.service, account: claude.keychainAccount)
             let account = claude.readAccount().value as NSDictionary?
             let expected = (try? JSONSerialization.jsonObject(with: Data(target.claudeAccount!.utf8))) as? NSDictionary
             ok = written != nil && readBack == .found(written!) && account != nil && account == expected
@@ -458,18 +505,21 @@ public struct Switcher: Sendable {
     // MARK: - Notice
 
     private func notice(_ target: VaultEnvelope) -> SwitchOutcome {
-        let email = target.label
+        let email = target.label, name = named(target.tool)
         switch target.tool {
         case .claude:
-            return .switched(notice: "Claude Code now signs in as \(email). New sessions use it; running ones follow within about 30 s.", daemonRunning: false)
+            return .switched(notice: "\(name) now signs in as \(email). New sessions use it; running ones follow within about 30 s.", daemonRunning: false)
         case .agy:
-            return .switched(notice: "Antigravity CLI now signs in as \(email) from its next session.", daemonRunning: false)
+            return .switched(notice: "\(name) now signs in as \(email) from its next session.", daemonRunning: false)
         case .codex:
-            let lines = processes.lines()
-            let daemon = CodexProcesses.daemonRunning(lines), desktop = CodexProcesses.desktopAppRunning(lines)
+            let lines = processes.lines(), isDefault = env.contextPaths[.codex] == nil
+            // This home's daemon only; the default home also takes one from a Codex too old to record its pid.
+            let daemon = CodexProcesses.daemonRunning(lines, codexHome: env.liveCodexHome, orAny: isDefault)
+            // The desktop app runs from the default home, so only a default switch leaves it behind.
+            let desktop = isDefault && CodexProcesses.desktopAppRunning(lines)
             // The app-server is restarted by the caller (AccountCommands); only the desktop app is left to name.
             let suffix = desktop ? " The running Codex desktop app still uses the previous account." : ""
-            return .switched(notice: "Codex now signs in as \(email).\(suffix)", daemonRunning: daemon)
+            return .switched(notice: "\(name) now signs in as \(email).\(suffix)", daemonRunning: daemon)
         }
     }
 }

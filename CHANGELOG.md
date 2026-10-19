@@ -6,6 +6,25 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+### Added
+
+- Contexts for Claude Code and Codex. Add other `CLAUDE_CONFIG_DIR` or `CODEX_HOME` folders under Contexts in the manager, then pick one from the tool's card in the popover or from the manager header. Argus shows, saves and switches the selected folder's login; saved accounts are shared by every folder, and each row says whether its exact path holds a login.
+- A switch is refused while that account is live in another context of the same tool, since one login copied into two folders signs one of them out at its next renewal. Signing in with the tool itself in each folder keeps both.
+
+- The Contexts list flags two folders sharing one login (a copied Codex folder), whichever renews first signs the other out, and a folder whose account can't be read, which pauses renewing that tool's saved accounts.
+
+### Changed
+
+- After a Codex switch, only the app-server daemon of that Codex home is restarted, and the desktop-app note appears only for the default home.
+- An account live in several contexts is polled with the login whose token lasts longest, and switch notices name the context ("Claude Code (Work) now signs in as …").
+- A switch is paused while another context's login can't be read, and a context is kept while its folder runs on the saved login that only it has live, since Argus would otherwise renew that login and sign the folder out.
+- A Codex folder signed in with an API key no longer holds up renewal of saved Codex accounts.
+
+### Fixed
+
+- The Claude Keychain account follows Claude Code's own rule: a login name with anything other than letters, digits, `.`, `_` or `-` reads the `claude-code-user` account.
+- Claude Code's legacy lock is taken at the config folder's real path, so a symlinked `~/.claude` locks the same directory Claude Code does.
+
 ## [0.2.4] - 2026-10-18
 
 ### Changed

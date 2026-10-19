@@ -25,10 +25,12 @@ struct ClaudeLocks {
     let timing: ClaudeLockTiming
     let now: @Sendable () -> Date
 
-    init(home: URL, configURL: URL, timing: ClaudeLockTiming, now: @escaping @Sendable () -> Date) {
+    /// `configHome` is `CLAUDE_CONFIG_DIR`, else `~/.claude`.
+    init(configHome: URL, configURL: URL, timing: ClaudeLockTiming, now: @escaping @Sendable () -> Date) {
         locks = [
-            (home.appending(path: ".claude/.oauth_refresh.lock"), timing.refreshStale),
-            (home.appending(path: ".claude.lock"), timing.refreshStale),
+            (configHome.appending(path: ".oauth_refresh.lock"), timing.refreshStale),
+            // The config home's real path plus ".lock": `~/.claude.lock` by default.
+            (URL(fileURLWithPath: configHome.resolvingSymlinksInPath().path + ".lock"), timing.refreshStale),
             // Claude Code locks the config's real path.
             (URL(fileURLWithPath: configURL.resolvingSymlinksInPath().path + ".lock"), timing.configStale),
         ]
