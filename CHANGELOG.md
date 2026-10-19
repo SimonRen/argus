@@ -6,6 +6,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-19
+
 ### Added
 
 - Contexts for Claude Code and Codex. Add other `CLAUDE_CONFIG_DIR` or `CODEX_HOME` folders under Contexts in the manager, then pick one from the tool's card in the popover or from the manager header. Argus shows, saves and switches the selected folder's login; saved accounts are shared by every folder, and each row says whether its exact path holds a login.
