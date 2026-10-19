@@ -29,7 +29,7 @@ import ArgusCore
         await cmds.remove(key)
         #expect(!FileManager.default.fileExists(atPath: file(rig, key).path))
         #expect(!FileManager.default.fileExists(atPath: file(rig, key).path + ".prev"))
-        #expect(!rig.state.snapshot(.codex).accounts.contains { $0.key == key })
+        #expect(!rig.state.snapshot(.default(.codex)).accounts.contains { $0.key == key })
         #expect(cmds.undoBanner == "Removed b@example.com. Its saved login file was deleted.")
         #expect(try Data(contentsOf: rig.box.codexHome.appending(path: "auth.json")) == Data("live-bytes".utf8))
         rig.clock.advance(300)
@@ -65,7 +65,7 @@ import ArgusCore
         let cmds = commands(rig)
         await rig.poller.runBatch()
         await cmds.remove(key)
-        let account = try #require(rig.state.snapshot(.agy).accounts.first)
+        let account = try #require(rig.state.snapshot(.default(.agy)).accounts.first)
         #expect(account.isLive && !account.isSaved)
     }
 
@@ -122,7 +122,7 @@ import ArgusCore
         await cmds.undo()
         #expect(try Data(contentsOf: file(rig, key)) == bytes)
         #expect(cmds.undoBanner == nil)
-        #expect(rig.state.snapshot(.codex).accounts.contains { $0.key == key })
+        #expect(rig.state.snapshot(.default(.codex)).accounts.contains { $0.key == key })
         await rig.poller.runBatch()
         #expect(rig.count("b") == 1)
     }
@@ -167,12 +167,12 @@ import ArgusCore
         let rig = try PollerRig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]])
         await rig.poller.runBatch()
         let prefs = MenuBarPreferences(defaults: UserDefaults(suiteName: UUID().uuidString)!)
-        let snapshot = rig.state.snapshot(.claude)
+        let snapshot = rig.state.snapshot(.default(.claude))
         #expect(MenuBarSummary.build([snapshot], isShown: prefs.isShown).segments.count == 1)
-        #expect(ManagerSidebarRow.build(snapshot, isShown: prefs.isShown(.claude)).showsMenubarGlyph)
-        prefs.setShown(.claude, false)
+        #expect(ManagerSidebarRow.build(snapshot, isShown: prefs.isShown(.default(.claude))).showsMenubarGlyph)
+        prefs.setShown(.default(.claude), false)
         #expect(MenuBarSummary.build([snapshot], isShown: prefs.isShown).showsGlyphOnly)
-        let row = ManagerSidebarRow.build(snapshot, isShown: prefs.isShown(.claude))
+        let row = ManagerSidebarRow.build(snapshot, isShown: prefs.isShown(.default(.claude)))
         #expect(!row.showsMenubarGlyph)
         #expect(row.liveEmail == "a@example.com" && row.fiveHour.text == "10%" && row.sevenDay.text == "20%")
     }
@@ -191,8 +191,8 @@ import ArgusCore
         #expect(ManagerText.saveBanner(.refused("signed out")) == "signed out")
         let rig = try PollerRig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]])
         let cmds = commands(rig)
-        #expect(ManagerText.saveBanner(await cmds.save(.claude)) == "Saved a@example.com.")
-        #expect(ManagerText.saveBanner(await cmds.save(.claude)) == "Updated the saved login for a@example.com.")
+        #expect(ManagerText.saveBanner(await cmds.save(.default(.claude))) == "Saved a@example.com.")
+        #expect(ManagerText.saveBanner(await cmds.save(.default(.claude))) == "Updated the saved login for a@example.com.")
     }
 
     // MARK: F07-AC-7.c9
@@ -208,8 +208,8 @@ import ArgusCore
         try await rig.save(testLogin(.claude, "a"))
         try await rig.save(testLogin(.claude, "b"))
         await rig.poller.runBatch()
-        #expect(ManagerText.header(rig.state.snapshot(.claude)) == "Signed in as a@example.com")
-        #expect(ManagerText.header(rig.state.snapshot(.codex)) == "Signed in as x@example.com — not saved")
-        #expect(ManagerText.header(rig.state.snapshot(.agy)) == "Not signed in")
+        #expect(ManagerText.header(rig.state.snapshot(.default(.claude))) == "Signed in as a@example.com")
+        #expect(ManagerText.header(rig.state.snapshot(.default(.codex))) == "Signed in as x@example.com — not saved")
+        #expect(ManagerText.header(rig.state.snapshot(.default(.agy))) == "Not signed in")
     }
 }

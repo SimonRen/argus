@@ -43,7 +43,7 @@ fileprivate let start = Date(timeIntervalSince1970: 1_790_000_000)
         #expect(rig.state.status[testKey(b)]?.reading != nil)
     }
 
-    @Test func `REQ/F09-AC-9.c4 one account live in two contexts is fetched once, the selected context shows its own live login`() async throws {
+    @Test func `REQ/F09-AC-9.c4 one account live in two contexts is fetched once and shows live in both sections`() async throws {
         let a = testLogin(.codex, "a")
         let rig = try PollerRig(live: [.codex: [.signedIn(a)]])
         let cmds = commands(rig)
@@ -51,41 +51,69 @@ fileprivate let start = Date(timeIntervalSince1970: 1_790_000_000)
         await rig.poller.refreshLive()
         #expect(rig.count("a") == 1)
         #expect(rig.state.liveContexts(testKey(a)) == [.default(.codex), work])
-        cmds.selectContext(work)
-        #expect(rig.state.snapshot(.codex).context == work)
-        #expect(rig.state.snapshot(.codex).accounts.first { $0.key == testKey(a) }?.liveElsewhere == ["Default"])
+        #expect(rig.state.snapshot(work).context == work)
+        for context in [.default(.codex), work] {
+            #expect(rig.state.snapshot(context).accounts.filter(\.isLive).map(\.key) == [testKey(a)])
+        }
     }
 
     // MARK: F09-AC-9.c6
 
-    @Test func `REQ/F09-AC-9.c6 a row live in another context reads live in it, its Switch is disabled, and it is never suggested`() async throws {
-        let a = testLogin(.claude, "a"), b = testLogin(.claude, "b")
+    @Test func `REQ/F09-AC-9.c6 each context is its own section, listing its live account and those live nowhere`() async throws {
+        let a = testLogin(.claude, "a"), b = testLogin(.claude, "b"), c = testLogin(.claude, "c")
         let rig = try PollerRig(live: [.claude: [.signedIn(a)]])
-        try await rig.save(a)
-        try await rig.save(b)
+        for login in [a, b, c] { try await rig.save(login) }
         await rig.poller.reloadVault()
         let cmds = commands(rig)
-        #expect(ToolCard.build(rig.state.snapshot(.claude), expanded: true, dismissedUnsavedKey: nil, now: Date()).contexts.isEmpty)
+        func card(_ context: ToolContext) -> ToolCard {
+            ToolCard.build(rig.state.snapshot(context), expanded: true, dismissedUnsavedKey: nil, now: Date())
+        }
+        // One context: the tool's plain card, every account listed.
+        #expect(card(.default(.claude)).contextName == nil && card(.default(.claude)).rows.count == 3)
         let work = await addWork(rig, cmds, live: .signedIn(b))
-        let card = ToolCard.build(rig.state.snapshot(.claude), expanded: true, dismissedUnsavedKey: nil, now: Date())
-        #expect(card.contexts == [.default(.claude), work] && card.context == .default(.claude))
-        let row = try #require(card.rows.first { $0.id == testKey(b) })
-        #expect(!row.isLive && row.liveElsewhere == ["Work"])
-        #expect(row.switchDisabledReason == "Live in Work")
-        #expect(row.subtitle == "Pro · live in Work")
-        #expect(card.suggestion == nil)
-        // In Work the roles swap.
-        cmds.selectContext(work)
-        let other = ToolCard.build(rig.state.snapshot(.claude), expanded: true, dismissedUnsavedKey: nil, now: Date())
-        #expect(other.liveRow?.id == testKey(b) && other.rows.first { $0.id == testKey(a) }?.switchDisabledReason == "Live in Default")
+        let main = card(.default(.claude)), other = card(work)
+        #expect(main.contextName == "Default" && main.liveRow?.id == testKey(a))
+        #expect(other.contextName == "Work" && other.liveRow?.id == testKey(b))
+        // b is listed only in Work, a only in Default; c, live nowhere, can be switched into either.
+        #expect(main.rows.map(\.id) == [testKey(a), testKey(c)])
+        #expect(other.rows.map(\.id) == [testKey(b), testKey(c)])
+        #expect(other.rows.allSatisfy { $0.switchDisabledReason == nil })
     }
 
-    @Test func `REQ/F09-AC-9.c6 Save takes the selected context's live login`() async throws {
+    @Test func `REQ/F09-AC-9.c6 a section saves its own context's live login and names it in the unsaved banner`() async throws {
         let rig = try PollerRig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]])
         let cmds = commands(rig)
         let work = await addWork(rig, cmds, live: .signedIn(testLogin(.claude, "w")))
-        cmds.selectContext(work)
-        #expect(await cmds.save(.claude) == .saved(email: "w@example.com"))
+        func banner(_ context: ToolContext) -> String? {
+            ToolCard.build(rig.state.snapshot(context), expanded: false, dismissedUnsavedKey: cmds.dismissedUnsaved[context], now: Date()).unsavedBanner
+        }
+        #expect(banner(work) == "Claude Code (Work) is signed in as w@example.com, which isn't saved yet.")
+        #expect(banner(.default(.claude)) == "Claude Code (Default) is signed in as a@example.com, which isn't saved yet.")
+        cmds.later(work)
+        #expect(banner(work) == nil && banner(.default(.claude)) != nil)
+        #expect(await cmds.save(work) == .saved(email: "w@example.com"))
+        #expect(rig.state.snapshot(work).accounts.first { $0.isLive }?.isSaved == true)
+    }
+
+    @Test func `REQ/F09-AC-9.c6 the menubar shows each shown context, an added one by name, each with its own Show choices`() async throws {
+        let rig = try PollerRig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]])
+        let cmds = commands(rig)
+        let work = await addWork(rig, cmds, live: .signedIn(testLogin(.claude, "w")))
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let prefs = MenuBarPreferences(defaults: defaults)
+        func summary() -> MenuBarSummary {
+            MenuBarSummary.build(Tool.allCases.flatMap(rig.state.contexts).map(rig.state.snapshot), isShown: prefs.isShown)
+        }
+        #expect(summary().segments.map(\.context) == [nil, "Work"])
+        #expect(summary().accessibilityLabel == "Claude Code 7 d —; Claude Code (Work) 7 d —")
+        prefs.setShown(work, false)
+        prefs.setInPopover(.default(.claude), false)
+        #expect(summary().segments.map(\.context) == [nil])
+        let relaunched = MenuBarPreferences(defaults: defaults)
+        #expect(!relaunched.isShown(work) && relaunched.isShown(.default(.claude)))
+        #expect(!relaunched.isInPopover(.default(.claude)) && relaunched.isInPopover(work))
+        // The default context keeps the key it had before contexts.
+        #expect(defaults.object(forKey: "showInPopover.claude") as? Bool == false)
     }
 
     // MARK: F09-AC-9.c5
@@ -107,7 +135,7 @@ fileprivate let start = Date(timeIntervalSince1970: 1_790_000_000)
         #expect(await cmds.addContext(.codex, path: rig.box.codexHome.path + "/", name: "") == "That folder is already a Codex context.")
     }
 
-    @Test func `REQ/F09-AC-9.c5 contexts and the selection persist; removing the selected one hands over to the default`() async throws {
+    @Test func `REQ/F09-AC-9.c5 contexts persist; removing one forgets its live login`() async throws {
         let box = try TestSandbox(security: ScriptedSecurity([.timedOut]))
         let vault = try Vault(supportRoot: box.supportRoot)
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
@@ -119,16 +147,14 @@ fileprivate let start = Date(timeIntervalSince1970: 1_790_000_000)
                                    switcher: Switcher(env: box.env, vault: vault, processes: ProcessListing { [] }))
         #expect(await cmds.addContext(.codex, path: box.root.path + "/codex-work", name: "Work") == nil)
         let work = state.contexts(.codex)[1]
-        cmds.selectContext(work)
-        #expect(state.live[.codex]?[work.id] == .notSignedIn)
+        #expect(state.liveState(work) == .notSignedIn)
 
         let relaunched = AppState(defaults: defaults)
         #expect(relaunched.contexts(.codex) == [.default(.codex), work])
-        #expect(relaunched.selectedContext(.codex) == work)
         #expect(relaunched.contexts(.claude) == [.default(.claude)] && relaunched.contexts(.agy) == [.default(.agy)])
 
         #expect(await cmds.removeContext(work) == nil)
-        #expect(state.selectedContext(.codex) == .default(.codex) && state.live[.codex]?[work.id] == nil)
+        #expect(state.liveState(work) == nil)
         #expect(AppState(defaults: defaults).contexts(.codex) == [.default(.codex)])
         #expect(box.violations.isEmpty)
     }

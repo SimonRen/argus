@@ -25,7 +25,7 @@ There are two targets. `ArgusCore` holds every piece of logic and the view model
 Data flows one way:
 1. The tool adapters (`Tools/ClaudeTool`, `CodexTool`, `AgyTool`) read the live login into a `LiveLogin` with an `Identity`.
 2. `AppState` (`@MainActor @Observable`) holds the live logins, vault entries and per-account status.
-3. `state.snapshot(tool)` returns a `ToolSnapshot`.
+3. `state.snapshot(context)` returns a `ToolSnapshot`, one per tool context.
 4. Pure view models turn the snapshot into what the views draw: `ToolCard`/`AccountRow` in `RowModel.swift`, plus `ManagerModel` and `MenuBarSummary`.
 5. `PopoverView`, `ManagerView` and `StatusItemController` draw the result.
 
@@ -39,7 +39,7 @@ Key mechanisms, each spread across several files:
   - Claude: the `Claude Code-credentials` Keychain item plus `oauthAccount` in `~/.claude.json`, taken under Claude Code's own lock directories (`ClaudeLocks`). A switch cut short is rolled forward at launch from the digest journal `vault/claude-switch.json` (`settleInterruptedSwitch`).
   - Codex: `auth.json` in `CODEX_HOME`, written through symlinks. A running Codex app-server daemon is then restarted (`CodexDaemon`). Codex logins stored in the Keychain are shown but never switched.
   - agy: its Keychain item and its token file.
-- **Contexts** (ADR-0004): a `ToolContext` is the exact `CLAUDE_CONFIG_DIR` or `CODEX_HOME` value (nil is the default). `ToolEnvironment.scoped(to:)` and `ToolAdapter.scoped(to:)` point the readers at one. Claude's Keychain item becomes `Claude Code-credentials-<first 8 hex of sha256(path)>`, so `/x` and `/x/` are different logins. `AppState.live` is kept per tool, per context. Accounts stay global, and a switch is refused while its account is live in another context. agy has none.
+- **Contexts** (ADR-0004): a `ToolContext` is the exact `CLAUDE_CONFIG_DIR` or `CODEX_HOME` value (nil is the default). `ToolEnvironment.scoped(to:)` and `ToolAdapter.scoped(to:)` point the readers at one. Claude's Keychain item becomes `Claude Code-credentials-<first 8 hex of sha256(path)>`, so `/x` and `/x/` are different logins. `AppState.live` is kept per tool, per context. Each context is its own popover card and manager page, listing its live account and the accounts live nowhere. Accounts stay global, and a switch is refused while its account is live in another context. agy has none.
 - **Polling and renewal**: `Poller` fetches a batch every 3, 5 or 10 minutes.
   - Requests go out one at a time per vendor, a 429 puts that account into backoff, and minimum gaps persist across restarts in `readings.json`.
   - Opening the popover reads and sends nothing. Live logins are read by interval batches and the refresh buttons, and `rereadLive()` (local stores only, no network) runs after a switch.

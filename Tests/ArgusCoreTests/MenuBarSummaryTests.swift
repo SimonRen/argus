@@ -36,7 +36,7 @@ fileprivate func value(_ text: String, _ low: Bool = false) -> MenuBarValue { Me
 
     @Test func `REQ/F05-AC-5.c1 hidden tools and tools without a live login have no segment`() {
         let snapshots = [snapshot(.claude, groups: [group("", 1, 2)]), snapshot(.codex, groups: nil, signedIn: false), snapshot(.agy, groups: [group("", 3, 4)])]
-        #expect(MenuBarSummary.build(snapshots) { $0 != .agy }.segments.map(\.tool) == [.claude])
+        #expect(MenuBarSummary.build(snapshots) { $0.tool != .agy }.segments.map(\.tool) == [.claude])
     }
 
     @Test func `REQ/F05-AC-5.c1 a live login without a reading yet shows dashes`() {
@@ -116,14 +116,14 @@ fileprivate func value(_ text: String, _ low: Bool = false) -> MenuBarValue { Me
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let prefs = MenuBarPreferences(defaults: defaults)
-        #expect(Tool.allCases.allSatisfy { prefs.isShown($0) })
-        prefs.setShown(.agy, false)
-        #expect(!prefs.isShown(.agy))
+        #expect(Tool.allCases.allSatisfy { prefs.isShown(.default($0)) })
+        prefs.setShown(.default(.agy), false)
+        #expect(!prefs.isShown(.default(.agy)))
         #expect(defaults.object(forKey: "showInMenubar.agy") as? Bool == false)
         let restarted = MenuBarPreferences(defaults: UserDefaults(suiteName: suite)!)
-        #expect(!restarted.isShown(.agy) && restarted.isShown(.claude) && restarted.isShown(.codex))
-        restarted.setShown(.agy, true)
-        #expect(MenuBarPreferences(defaults: UserDefaults(suiteName: suite)!).isShown(.agy))
+        #expect(!restarted.isShown(.default(.agy)) && restarted.isShown(.default(.claude)) && restarted.isShown(.default(.codex)))
+        restarted.setShown(.default(.agy), true)
+        #expect(MenuBarPreferences(defaults: UserDefaults(suiteName: suite)!).isShown(.default(.agy)))
     }
 
     @MainActor @Test func `Show in popover is on until set, independent of Show in menubar, and survives a restart`() {
@@ -131,10 +131,10 @@ fileprivate func value(_ text: String, _ low: Bool = false) -> MenuBarValue { Me
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let prefs = MenuBarPreferences(defaults: defaults)
-        #expect(Tool.allCases.allSatisfy { prefs.isInPopover($0) })
-        prefs.setInPopover(.codex, false)
-        #expect(!prefs.isInPopover(.codex) && prefs.isShown(.codex))
+        #expect(Tool.allCases.allSatisfy { prefs.isInPopover(.default($0)) })
+        prefs.setInPopover(.default(.codex), false)
+        #expect(!prefs.isInPopover(.default(.codex)) && prefs.isShown(.default(.codex)))
         let restarted = MenuBarPreferences(defaults: UserDefaults(suiteName: suite)!)
-        #expect(!restarted.isInPopover(.codex) && restarted.isInPopover(.claude) && restarted.isShown(.codex))
+        #expect(!restarted.isInPopover(.default(.codex)) && restarted.isInPopover(.default(.claude)) && restarted.isShown(.default(.codex)))
     }
 }

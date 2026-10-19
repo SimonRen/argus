@@ -124,7 +124,7 @@ struct PopoverWarmup {
     /// Draws the current summary and re-arms observation of everything it read.
     private func render() {
         let summary = withObservationTracking {
-            MenuBarSummary.build(Tool.allCases.map { state.snapshot($0) }, isShown: preferences.isShown)
+            MenuBarSummary.build(Tool.allCases.flatMap(state.contexts).map(state.snapshot), isShown: preferences.isShown)
         } onChange: { [weak self] in
             Task { @MainActor in self?.render() }
         }
@@ -142,6 +142,8 @@ struct PopoverWarmup {
     /// The menu bar's own font (size and regular weight), with digits of equal width so values don't shift as they change.
     private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)
     private static let letterFont = NSFont.systemFont(ofSize: 8.5, weight: .heavy)
+    /// An added context's name between the mark and the value.
+    private static let contextFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
 
     /// A white-silhouette tool icon filled with `color`.
     private static func tinted(_ glyph: NSImage, _ color: NSColor) -> NSImage {
@@ -166,11 +168,17 @@ struct PopoverWarmup {
         let label = NSColor.labelColor
         let widths = summary.segments.map { width($0.sevenDay.text) }
         let glyphs = summary.segments.map { ToolIcon.glyph($0.tool).map { tinted($0, label) } }
-        let marks = glyphs.map { $0 == nil ? mark : iconMark }
+        let names = summary.segments.map { $0.context.map { NSAttributedString(string: $0, attributes: [.font: contextFont, .foregroundColor: NSColor.secondaryLabelColor]) } }
+        // A name sits 3 pt after the mark and, with `gap`, 3 pt before the value.
+        let marks = zip(glyphs, names).map { ($0 == nil ? mark : iconMark) + ($1.map { ceil($0.size().width) + 5 } ?? 0) }
         let total = padding * 2 + zip(marks, widths).reduce(0) { $0 + $1.0 + gap + $1.1 } + spacing * CGFloat(max(0, widths.count - 1))
         let image = NSImage(size: NSSize(width: ceil(total), height: height), flipped: false) { _ in
             var x = padding
-            for (((segment, valueWidth), glyph), markWidth) in zip(zip(zip(summary.segments, widths), glyphs), marks) {
+            for ((((segment, valueWidth), glyph), markWidth), name) in zip(zip(zip(zip(summary.segments, widths), glyphs), marks), names) {
+                if let name {
+                    let size = name.size()
+                    name.draw(at: NSPoint(x: x + markWidth - 2 - size.width, y: (height - size.height) / 2))
+                }
                 if let glyph {
                     glyph.draw(in: NSRect(x: x, y: (height - iconMark) / 2, width: iconMark, height: iconMark))
                 } else {

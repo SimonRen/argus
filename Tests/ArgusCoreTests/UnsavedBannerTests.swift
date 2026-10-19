@@ -8,7 +8,7 @@ import ArgusCore
 }
 
 @MainActor fileprivate func banner(_ rig: PollerRig, _ cmds: AccountCommands, _ tool: Tool) -> String? {
-    ToolCard.build(rig.state.snapshot(tool), expanded: false, dismissedUnsavedKey: cmds.dismissedUnsaved[tool], now: rig.clock.now).unsavedBanner
+    ToolCard.build(rig.state.snapshot(.default(tool)), expanded: false, dismissedUnsavedKey: cmds.dismissedUnsaved[.default(tool)], now: rig.clock.now).unsavedBanner
 }
 
 @MainActor @Suite struct UnsavedBannerTests {
@@ -38,11 +38,11 @@ import ArgusCore
         let cmds = commands(rig)
         await rig.poller.runBatch()
         #expect(banner(rig, cmds, .agy) != nil)
-        #expect(await cmds.save(.agy) == .saved(email: "g@example.com"))
+        #expect(await cmds.save(.default(.agy)) == .saved(email: "g@example.com"))
         #expect(cmds.notice == "Saved g@example.com.")
         #expect(banner(rig, cmds, .agy) == nil)
-        #expect(rig.state.snapshot(.agy).accounts.first?.isSaved == true)
-        #expect(await cmds.save(.agy) == .updated(email: "g@example.com"))
+        #expect(rig.state.snapshot(.default(.agy)).accounts.first?.isSaved == true)
+        #expect(await cmds.save(.default(.agy)) == .updated(email: "g@example.com"))
         #expect(cmds.notice == "Updated the saved login for g@example.com.")
     }
 
@@ -50,7 +50,7 @@ import ArgusCore
         let rig = try PollerRig(live: [.codex: [.signedIn(testLogin(.codex, "bob"))]])
         let cmds = commands(rig)
         await rig.poller.runBatch()
-        cmds.later(.codex)
+        cmds.later(.default(.codex))
         #expect(banner(rig, cmds, .codex) == nil)
         rig.clock.advance(300)
         await rig.poller.runBatch()
@@ -65,7 +65,7 @@ import ArgusCore
                                 (.signedIn(testLogin(.claude, "c", complete: false)), "incomplete identity")] {
             let rig = try PollerRig(live: [.claude: [state]])
             let cmds = commands(rig)
-            #expect(await cmds.save(.claude) == .refused(reason))
+            #expect(await cmds.save(.default(.claude)) == .refused(reason))
             #expect(cmds.notice == reason)
             #expect(cmds.noticeIsProblem)
             #expect(await rig.vault.entries(.claude).isEmpty)
@@ -82,7 +82,7 @@ import ArgusCore
         let target = try await rig.vault.save(await CodexTool(env: rig.box.env).readLive())
         try rig.box.write("codex/auth.json", auth("a"))
         let cmds = commands(rig)
-        let outcome = await cmds.switchTo(AccountKey(tool: .codex, id: target.identity.fileID))
+        let outcome = await cmds.switchTo(AccountKey(tool: .codex, id: target.identity.fileID), in: .default(.codex))
         #expect(outcome == .switched(notice: "Codex now signs in as b@example.com.", daemonRunning: false))
         #expect(cmds.notice == "Codex now signs in as b@example.com.")
         #expect(rig.tools[.codex]!.reads >= 2)   // read again, then refreshed
@@ -90,7 +90,7 @@ import ArgusCore
         cmds.dismissNotice()
         #expect(cmds.notice == nil)
         #expect(!cmds.noticeIsProblem)
-        #expect(await cmds.switchTo(AccountKey(tool: .codex, id: "gone")) == .refused("That saved account is gone."))
+        #expect(await cmds.switchTo(AccountKey(tool: .codex, id: "gone"), in: .default(.codex)) == .refused("That saved account is gone."))
         #expect(cmds.notice == "That saved account is gone.")
         #expect(cmds.noticeIsProblem)
     }
@@ -110,7 +110,7 @@ import ArgusCore
             let switcher = Switcher(env: rig.box.env, vault: rig.vault, processes: ProcessListing { ["77 /opt/homebrew/bin/codex app-server --managed-daemon"] })
             let cmds = AccountCommands(state: rig.state, poller: rig.poller, vault: rig.vault, tools: Tool.allCases.map { rig.tools[$0]! },
                                        switcher: switcher, restartDaemon: { _ in await gate.wait(); return failure })
-            let switching = Task { await cmds.switchTo(AccountKey(tool: .codex, id: target.identity.fileID)) }
+            let switching = Task { await cmds.switchTo(AccountKey(tool: .codex, id: target.identity.fileID), in: .default(.codex)) }
             while cmds.notice == nil { await Task.yield() }
             #expect(cmds.notice == lead + " Restarting the Codex app-server so open sessions move over; a running reply gets up to a minute to finish.")
             #expect(!cmds.offersRestart)

@@ -46,15 +46,15 @@ import SwiftUI
     }
 }
 
-/// Providers sidebar plus the selected tool's accounts (ui/Manager.dc.html).
+/// Providers sidebar, one row per tool context, plus the selected context's accounts (ui/Manager.dc.html).
 struct ManagerView: View {
     let state: AppState
     let commands: AccountCommands
     let preferences: MenuBarPreferences
     let loginItem: LoginItemController
 
-    @State private var selected: Tool = .claude
-    @State private var saveBanner: [Tool: (text: String, problem: Bool)] = [:]
+    @State private var selected = ToolContext.default(.claude)
+    @State private var saveBanner: [ToolContext: (text: String, problem: Bool)] = [:]
     @State private var tableWidth: CGFloat = 780
     /// The add-context row's fields and its last refusal.
     @State private var newContextName = ""
@@ -128,19 +128,24 @@ struct ManagerView: View {
     private func sidebar(_ t: Theme) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("PROVIDERS").font(.system(size: 10.5, weight: .semibold)).kerning(0.4).foregroundStyle(t.ter).padding(.horizontal, 8).padding(.bottom, 6)
-            ForEach(Tool.allCases, id: \.self) { tool in
-                let row = ManagerSidebarRow.build(state.snapshot(tool), isShown: preferences.isShown(tool))
-                Button { selected = tool } label: {
+            ForEach(Tool.allCases.flatMap(state.contexts), id: \.self) { context in
+                let snapshot = state.snapshot(context)
+                let row = ManagerSidebarRow.build(snapshot, isShown: preferences.isShown(context))
+                Button { selected = context } label: {
                     HStack(spacing: 10) {
-                        ToolMark(tool: tool, size: 24)
+                        ToolMark(tool: context.tool, size: 24)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 5) {
-                                Text(tool.displayName).font(.system(size: 13, weight: selected == tool ? .semibold : .medium))
+                                Text(context.tool.displayName).font(.system(size: 13, weight: selected == context ? .semibold : .medium))
                                 if row.showsMenubarGlyph {
                                     Image(systemName: "chart.bar.fill").font(.system(size: 9)).foregroundStyle(t.ter).accessibilityLabel("Shown in menubar")
                                 }
                             }
-                            Text(row.liveEmail ?? "Not signed in").font(.system(size: 11)).foregroundStyle(t.sub).lineLimit(1)
+                            // The context beside the email: beside the name it wraps "Claude Code" in the 250 pt sidebar.
+                            HStack(spacing: 5) {
+                                if let name = snapshot.contextName { ContextChip(context: context, name: name, theme: t) }
+                                Text(row.liveEmail ?? "Not signed in").font(.system(size: 11)).foregroundStyle(t.sub).lineLimit(1)
+                            }
                         }
                         Spacer(minLength: 4)
                         VStack(alignment: .trailing, spacing: 0) {
@@ -150,7 +155,7 @@ struct ManagerView: View {
                         .font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
                     }
                     .padding(.horizontal, 10).padding(.vertical, 8)
-                    .background(selected == tool ? t.soft : .clear, in: RoundedRectangle(cornerRadius: 9))
+                    .background(selected == context ? t.soft : .clear, in: RoundedRectangle(cornerRadius: 9))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -163,20 +168,18 @@ struct ManagerView: View {
     // MARK: Detail
 
     private func detail(_ t: Theme, now: Date) -> some View {
-        let snapshot = state.snapshot(selected)
+        let snapshot = state.snapshot(selected), tool = selected.tool
         let card = ToolCard.build(snapshot, expanded: true, dismissedUnsavedKey: nil, now: now)
         let rows = card.rows
         return GeometryReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 12) {
-                        ToolMark(tool: selected, size: 32)
+                        ToolMark(tool: tool, size: 32)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 8) {
-                                Text(selected.displayName).font(.system(size: 18, weight: .bold))
-                                if !card.contexts.isEmpty {
-                                    ContextPicker(context: card.context, contexts: card.contexts, theme: t, select: commands.selectContext)
-                                }
+                                Text(tool.displayName).font(.system(size: 18, weight: .bold))
+                                if let name = card.contextName { ContextChip(context: selected, name: name, theme: t) }
                             }
                             Text(ManagerText.header(snapshot)).font(.system(size: 12)).foregroundStyle(t.sub)
                         }
@@ -184,22 +187,22 @@ struct ManagerView: View {
                         HStack(spacing: 8) {
                             Text("Show in").font(.system(size: 12)).foregroundStyle(t.sub).fixedSize()
                             Text("Menubar").font(.system(size: 12)).fixedSize()
-                            Toggle("Show \(selected.displayName) in menubar",
+                            Toggle("Show \(tool.displayName) in menubar",
                                    isOn: Binding(get: { preferences.isShown(selected) }, set: { preferences.setShown(selected, $0) }))
                                 .toggleStyle(.switch).labelsHidden().controlSize(.small)
                             Text("Popover").font(.system(size: 12)).fixedSize().padding(.leading, 4)
-                            Toggle("Show \(selected.displayName) in popover",
+                            Toggle("Show \(tool.displayName) in popover",
                                    isOn: Binding(get: { preferences.isInPopover(selected) }, set: { preferences.setInPopover(selected, $0) }))
                                 .toggleStyle(.switch).labelsHidden().controlSize(.small)
                         }
                         .padding(.leading, 12).padding(.trailing, 6).frame(height: 30).background(t.soft, in: RoundedRectangle(cornerRadius: 9))
                         Button {
-                            let tool = selected
+                            let context = selected
                             Task {
-                                let result = await commands.save(tool)
+                                let result = await commands.save(context)
                                 commands.dismissNotice()
                                 let problem = if case .refused = result { true } else { false }
-                                saveBanner[tool] = (ManagerText.saveBanner(result), problem)
+                                saveBanner[context] = (ManagerText.saveBanner(result), problem)
                             }
                         } label: {
                             Text("Save current login").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
@@ -240,7 +243,7 @@ struct ManagerView: View {
                         .padding(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 6)).background(t.soft, in: RoundedRectangle(cornerRadius: 9))
                     }
                     table(t, rows: rows, availableWidth: proxy.size.width - 48)
-                    if selected.supportsContexts { contexts(t, snapshot) }
+                    if tool.supportsContexts { contexts(t) }
                 }
                 .padding(.horizontal, 24).padding(.vertical, 22)
             }
@@ -261,11 +264,11 @@ struct ManagerView: View {
             }
             .font(.system(size: 10.5, weight: .semibold)).kerning(0.4).foregroundStyle(t.ter)
             .padding(.horizontal, 16).padding(.vertical, 8).background(t.thead)
-            ForEach(rows) { ManagerRowView(row: $0, tool: selected, theme: t, columns: columns, commands: commands) }
+            ForEach(rows) { ManagerRowView(row: $0, context: selected, theme: t, columns: columns, commands: commands) }
             if !rows.contains(where: \.isSaved) {
                 VStack(spacing: 6) {
                     Text(ManagerText.emptyTitle).font(.system(size: 14, weight: .semibold))
-                    Text(ManagerText.emptyHint(selected)).font(.system(size: 12)).foregroundStyle(t.sub).multilineTextAlignment(.center).frame(maxWidth: 360)
+                    Text(ManagerText.emptyHint(selected.tool)).font(.system(size: 12)).foregroundStyle(t.sub).multilineTextAlignment(.center).frame(maxWidth: 360)
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 36).overlay(alignment: .top) { t.hair.frame(height: 1) }
             }
@@ -278,18 +281,19 @@ struct ManagerView: View {
 }
 
 extension ManagerView {
-    /// The tool's contexts: each with its live login and Select / Remove, then a row to add one.
-    private func contexts(_ t: Theme, _ snapshot: ToolSnapshot) -> some View {
-        let variable = selected == .codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"
+    /// The tool's contexts: each with its live login and Remove, then a row to add one. Each has its own page.
+    private func contexts(_ t: Theme) -> some View {
+        let tool = selected.tool
+        let variable = tool == .codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("CONTEXTS").font(.system(size: 10.5, weight: .semibold)).kerning(0.4).foregroundStyle(t.ter)
                 Spacer()
-                Text("Folders \(selected.displayName) runs from, chosen by \(variable). Saved accounts are shared by all.")
+                Text("Folders \(tool.displayName) runs from, chosen by \(variable). Saved accounts are shared by all.")
                     .font(.system(size: 11)).foregroundStyle(t.ter).lineLimit(1)
             }
             .padding(.horizontal, 16).padding(.vertical, 8).background(t.thead)
-            ForEach(snapshot.contexts) { context in
+            ForEach(state.contexts(tool), id: \.self) { context in
                 HStack(spacing: Columns.gap) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(context.name).font(.system(size: 13, weight: .medium))
@@ -298,19 +302,17 @@ extension ManagerView {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     let shared = state.sharesLogin(context)
-                    Text(ManagerText.contextStatus(state.live[selected]?[context.id], context: context, sharedWith: shared))
+                    Text(ManagerText.contextStatus(state.liveState(context), context: context, sharedWith: shared))
                         .font(.system(size: 12)).foregroundStyle(shared == nil ? t.sub : t.warnText).lineLimit(3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     HStack(spacing: 4) {
                         Spacer(minLength: 0)
-                        if context.id == snapshot.context.id {
-                            Text("Selected").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(t.liveText)
-                                .padding(.horizontal, 9).frame(height: 24).background(t.liveBg, in: Capsule())
-                        } else {
-                            PillButton(title: "Select", fill: t.chip, foreground: t.text) { commands.selectContext(context) }
-                                .help("Show, save and switch this context")
-                        }
-                        Button { Task { contextError = await commands.removeContext(context) } } label: {
+                        Button {
+                            Task {
+                                contextError = await commands.removeContext(context)
+                                if contextError == nil, selected == context { selected = .default(tool) }
+                            }
+                        } label: {
                             Image(systemName: "trash").font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 26)
                         }
                         .buttonStyle(.plain).foregroundStyle(t.sub).disabled(context.isDefault).opacity(context.isDefault ? 0 : 1)
@@ -324,7 +326,7 @@ extension ManagerView {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     TextField("Name (optional)", text: $newContextName).textFieldStyle(.roundedBorder).frame(width: 150)
-                    TextField("\(variable), e.g. ~/.\(selected == .codex ? "codex" : "claude")-work", text: $newContextPath)
+                    TextField("\(variable), e.g. ~/.\(tool == .codex ? "codex" : "claude")-work", text: $newContextPath)
                         .textFieldStyle(.roundedBorder).font(.system(size: 12, design: .monospaced))
                     Button("Choose…") {
                         let panel = NSOpenPanel()
@@ -334,7 +336,6 @@ extension ManagerView {
                         if panel.runModal() == .OK, let url = panel.url { newContextPath = url.path }
                     }
                     PillButton(title: "Add", fill: t.ok, disabled: newContextPath.trimmingCharacters(in: .whitespaces).isEmpty) {
-                        let tool = selected
                         Task {
                             contextError = await commands.addContext(tool, path: newContextPath, name: newContextName)
                             if contextError == nil { newContextName = ""; newContextPath = "" }
@@ -368,12 +369,15 @@ private struct Columns {
 
 private struct ManagerRowView: View {
     let row: AccountRow
-    let tool: Tool
+    /// The page's context: what Switch writes.
+    let context: ToolContext
     let theme: Theme
     let columns: Columns
     let commands: AccountCommands
     /// Remove takes two clicks: the first arms it for a few seconds, the second deletes.
     @State private var armed = false
+
+    private var tool: Tool { context.tool }
 
     var body: some View {
         let t = theme
@@ -383,7 +387,6 @@ private struct ManagerRowView: View {
                 HStack(spacing: 6) {
                     if let plan = row.plan, !plan.isEmpty { Chip(text: plan, theme: t) }
                     if !row.isSaved { Chip(text: "Not saved", theme: t) }
-                    if !row.liveElsewhere.isEmpty { Chip(text: "Live in \(row.liveElsewhere.joined(separator: ", "))", theme: t) }
                     let problem = PopoverText.problem(tool: tool, error: row.error, retryAt: row.retryAt, now: .now, timeZone: .current)
                     ForEach(Array(row.badges.enumerated()), id: \.offset) { item in
                         if case .stale(let age) = item.element {
@@ -415,7 +418,7 @@ private struct ManagerRowView: View {
                     .foregroundStyle(t.liveText).padding(.horizontal, 9).frame(height: 24).background(t.liveBg, in: Capsule())
                 } else {
                     PillButton(title: "Switch", fill: t.chip, foreground: t.text, disabled: row.switchDisabledReason != nil) {
-                        Task { await commands.switchTo(row.id) }
+                        Task { await commands.switchTo(row.id, in: context) }
                     }
                     .help(row.switchDisabledReason ?? "Switch \(tool.displayName) to \(row.email)")
                 }

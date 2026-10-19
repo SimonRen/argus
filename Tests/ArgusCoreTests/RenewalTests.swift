@@ -256,7 +256,7 @@ fileprivate func agyInner(_ envelope: VaultEnvelope?) -> [String: Any]? {
         let before = try Data(contentsOf: file)
         await rig.poller.runBatch()
         #expect(rig.state.status[key]?.flag == .needsSignIn)
-        #expect(rig.state.snapshot(tool).accounts.first?.flag == .needsSignIn)
+        #expect(rig.state.snapshot(.default(tool)).accounts.first?.flag == .needsSignIn)
         #expect(try Data(contentsOf: file) == before)
         let sent = rig.stub.requests.count
         rig.clock.advance(600)
@@ -316,7 +316,7 @@ fileprivate func agyInner(_ envelope: VaultEnvelope?) -> [String: Any]? {
         #expect(rig.tokenRequests.count == 1)
         for key in [b, c, testKey(live)] { #expect(rig.state.status[key]?.flag == .appNeedsUpdate) }
         #expect(await rig.renewer!.isBlocked(clientID: OAuthClients.antigravityClientID))
-        #expect(rig.state.snapshot(.agy).accounts.allSatisfy { $0.flag != .needsSignIn })
+        #expect(rig.state.snapshot(.default(.agy)).accounts.allSatisfy { $0.flag != .needsSignIn })
         let liveFetches = rig.count("a")
         rig.clock.advance(600)
         await rig.poller.runBatch()
@@ -430,7 +430,7 @@ fileprivate func agyInner(_ envelope: VaultEnvelope?) -> [String: Any]? {
         try await rig.save(testLogin(.claude, "b"))
         await rig.poller.reloadVault()
         #expect(rig.state.status[key]?.flag == .ok)
-        #expect(rig.state.snapshot(.claude).accounts.first?.flag == .ok)
+        #expect(rig.state.snapshot(.default(.claude)).accounts.first?.flag == .ok)
         rig.clock.advance(300)
         await rig.poller.runBatch()
         #expect(rig.count("b") == 1)

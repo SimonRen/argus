@@ -2,7 +2,7 @@ import Foundation
 
 public struct ManagerSidebarRow: Sendable, Equatable {
     public let tool: Tool
-    /// `MenuBarPreferences.isShown(tool)`.
+    /// `MenuBarPreferences.isShown(context)`.
     public let showsMenubarGlyph: Bool
     public let liveEmail: String?
     /// The live account's highest 5 h and 7 d used across its groups, minor agy groups left out as in the menubar.

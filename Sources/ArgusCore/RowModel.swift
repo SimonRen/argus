@@ -78,8 +78,6 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
     public let error: String?
     public let retryAt: Date?
     public let isLive: Bool
-    /// The names of the tool's other contexts it is live in.
-    public let liveElsewhere: [String]
     public let isSaved: Bool
     public let badges: [RowBadge]
     public let groups: [GroupRow]
@@ -101,7 +99,6 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
         error = account.error
         retryAt = account.retryAt
         isLive = account.isLive
-        liveElsewhere = account.liveElsewhere
         isSaved = account.isSaved
         var badges: [RowBadge] = []
         if account.stale, let reading = account.reading {
@@ -148,20 +145,15 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
         banner = blocked.map { .blocked($0.1) } ?? (windows.isEmpty ? .notFetched : nil)
         if let live, !live.allowsSwitch {
             switchDisabledReason = live.statusText(account.key.tool)
-        } else if !account.isLive, !account.liveElsewhere.isEmpty {
-            // One login in two contexts: whichever renews first signs the other out.
-            switchDisabledReason = "Live in \(account.liveElsewhere.joined(separator: ", "))"
         } else {
             switchDisabledReason = blocked?.1
         }
         refreshEnabled = account.isLive || blocked == nil
     }
 
-    /// The line under the popover name: the plan, then "live" for the live account ("Max · live"), or the other
-    /// contexts it is live in ("Max · live in Work").
+    /// The line under the popover name: the plan, then "live" for the live account ("Max · live").
     public var subtitle: String {
-        let live = isLive ? "live" : liveElsewhere.isEmpty ? nil : "live in \(liveElsewhere.joined(separator: ", "))"
-        return [plan.flatMap { $0.isEmpty ? nil : $0.capitalized }, live].compactMap { $0 }.joined(separator: " · ")
+        [plan.flatMap { $0.isEmpty ? nil : $0.capitalized }, isLive ? "live" : nil].compactMap { $0 }.joined(separator: " · ")
     }
 
     /// The badges the popover keeps beside the plan: only "Kept". Blocked and never-fetched show as the `banner`; a stale reading's
@@ -206,9 +198,9 @@ public struct ToolCard: Sendable, Equatable {
     public let columns: [String]
     public let suggestion: Suggestion?
     public let unsavedBanner: String?
-    /// The selected context, and the contexts its picker offers: empty while the tool has only the default.
+    /// The context this card is the section of; its name while the tool has several (`ToolSnapshot.contextName`).
     public let context: ToolContext
-    public let contexts: [ToolContext]
+    public let contextName: String?
 
     public static func build(_ snapshot: ToolSnapshot, expanded: Bool, dismissedUnsavedKey: String?, now: Date) -> ToolCard {
         let live = snapshot.accounts.first(where: \.isLive)
@@ -219,7 +211,7 @@ public struct ToolCard: Sendable, Equatable {
         var suggestion: Suggestion?
         if let live, !live.stale, let score = AccountRow.score(live), Int(score.rounded()) < 15 {
             var best: (AccountSnapshot, Double)?
-            for account in rest where account.isSaved && !account.stale && account.flag == .ok && account.liveElsewhere.isEmpty {
+            for account in rest where account.isSaved && !account.stale && account.flag == .ok {
                 if let s = AccountRow.score(account), s > (best?.1 ?? -1) { best = (account, s) }
             }
             if let (account, s) = best, Int(s.rounded()) >= 40 {
@@ -231,7 +223,8 @@ public struct ToolCard: Sendable, Equatable {
         if case .signedIn(let login)? = snapshot.live, login.identity.isComplete,
            !snapshot.accounts.contains(where: { $0.isSaved && $0.key.id == login.identity.fileID }),
            dismissedUnsavedKey != login.identity.key {
-            unsaved = "\(snapshot.tool.displayName) is signed in as \(login.label.isEmpty ? "Unknown account" : login.label), which isn't saved yet."
+            let tool = snapshot.tool.displayName + (snapshot.contextName.map { " (\($0))" } ?? "")
+            unsaved = "\(tool) is signed in as \(login.label.isEmpty ? "Unknown account" : login.label), which isn't saved yet."
         }
         let statusText: String? = if let state = snapshot.live, case .signedIn = state { nil } else { snapshot.live?.statusText(snapshot.tool) }
         // ponytail: the fullest row's order first; rows with disjoint window sets order by whichever comes first.
@@ -242,7 +235,7 @@ public struct ToolCard: Sendable, Equatable {
         return ToolCard(tool: snapshot.tool, liveRow: rows.first(where: \.isLive), liveStatusText: statusText,
                         others: others, rows: rows, moreLabel: others.isEmpty ? nil : expanded ? "Live only" : "+\(others.count) more",
                         columns: columns.isEmpty ? ["5h", "7d"] : columns, suggestion: suggestion, unsavedBanner: unsaved,
-                        context: snapshot.context, contexts: snapshot.contexts.count > 1 ? snapshot.contexts : [])
+                        context: snapshot.context, contextName: snapshot.contextName)
     }
 }
 

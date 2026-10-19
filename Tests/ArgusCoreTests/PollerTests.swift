@@ -71,10 +71,10 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(rig.count("a") == 1 && rig.count("b") == 1)
         #expect(rig.state.rateLimitedUntil[testKey(b)] == start + 300 && rig.state.rateLimitedUntil[testKey(a)] == nil)
         #expect(rig.state.status[testKey(b)]?.stale == true && rig.state.status[testKey(b)]?.error == "rate limited")
-        #expect(rig.state.snapshot(.claude).rateLimitedUntil == start + 300)
-        let bRow = try #require(rig.state.snapshot(.claude).accounts.first { $0.key == testKey(b) })
+        #expect(rig.state.snapshot(.default(.claude)).rateLimitedUntil == start + 300)
+        let bRow = try #require(rig.state.snapshot(.default(.claude)).accounts.first { $0.key == testKey(b) })
         #expect(bRow.retryAt == start + 300 && bRow.error == "rate limited" && bRow.reading == nil)
-        #expect(ToolCard.build(rig.state.snapshot(.claude), expanded: true, dismissedUnsavedKey: nil, now: rig.clock.now)
+        #expect(ToolCard.build(rig.state.snapshot(.default(.claude)), expanded: true, dismissedUnsavedKey: nil, now: rig.clock.now)
                     .others.first { $0.id == testKey(b) }?.badges == [.notFetched])
         rig.clock.advance(200)
         await rig.poller.runBatch()
@@ -175,7 +175,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
             #expect(status.reading == good)
             #expect(status.stale)
             #expect(status.error == expected)
-            #expect(rig.state.snapshot(.claude).accounts.first?.stale == true)
+            #expect(rig.state.snapshot(.default(.claude)).accounts.first?.stale == true)
         }
     }
 
@@ -272,9 +272,9 @@ fileprivate final class Concurrency: @unchecked Sendable {
         await rig.poller.reloadVault()
         let refresh = Task { await rig.poller.refreshLive() }
         #expect(await eventually { rig.stub.requests.count == 1 })
-        #expect(rig.state.snapshot(.claude).accounts.first { $0.key == testKey(a) }?.fetching == true)
-        #expect(rig.state.snapshot(.claude).accounts.first { $0.key == testKey(b) }?.fetching == false)
-        #expect(rig.state.snapshot(.claude).hidingMinorGroups.accounts.first { $0.key == testKey(a) }?.fetching == true)
+        #expect(rig.state.snapshot(.default(.claude)).accounts.first { $0.key == testKey(a) }?.fetching == true)
+        #expect(rig.state.snapshot(.default(.claude)).accounts.first { $0.key == testKey(b) }?.fetching == false)
+        #expect(rig.state.snapshot(.default(.claude)).hidingMinorGroups.accounts.first { $0.key == testKey(a) }?.fetching == true)
         await gate.release()
         await refresh.value
         #expect(rig.state.fetching.isEmpty)
@@ -469,7 +469,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
         let bad = String(repeating: "e", count: 64)
         try rig.box.write("support/vault/claude/\(bad).json", "{}")
         await rig.poller.runBatch()
-        let accounts = rig.state.snapshot(.claude).accounts
+        let accounts = rig.state.snapshot(.default(.claude)).accounts
         #expect(accounts.count == 4)
         let live = try #require(accounts.first { $0.key == testKey(a) })
         #expect(live.isLive && !live.isSaved && live.flag == .ok && live.reading != nil && live.label == "a@example.com")
@@ -477,8 +477,8 @@ fileprivate final class Concurrency: @unchecked Sendable {
         #expect(!saved.isLive && saved.isSaved && saved.kept && saved.plan == "pro")
         #expect(accounts.first { $0.key == testKey(c) }?.flag == .incomplete)
         #expect(accounts.first { $0.key.id == bad }?.flag == .unreadable)
-        #expect(rig.state.snapshot(.claude).live == .signedIn(a))
-        #expect(rig.state.snapshot(.agy).live == .notSignedIn)
+        #expect(rig.state.snapshot(.default(.claude)).live == .signedIn(a))
+        #expect(rig.state.snapshot(.default(.agy)).live == .notSignedIn)
     }
 
     @Test func `the interval reads 3, 5 or 10 minutes from defaults and anything else as 5`() {

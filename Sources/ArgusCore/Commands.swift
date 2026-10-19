@@ -37,8 +37,8 @@ public enum SaveResult: Sendable, Equatable {
     /// A short-lived hint, e.g. after a refresh that came too soon; it clears itself.
     public private(set) var hint: String?
     @ObservationIgnored private var hintTimer: Task<Void, Never>?
-    /// Tool → the live identity key "Later" was pressed for.
-    public private(set) var dismissedUnsaved: [Tool: String] = [:]
+    /// Context → the live identity key "Later" was pressed for.
+    public private(set) var dismissedUnsaved: [ToolContext: String] = [:]
     /// The last removed entry's raw bytes, held only while Undo is possible.
     @ObservationIgnored private var removed: RemovedEntry?
     private var removedEmail: String?
@@ -53,9 +53,10 @@ public enum SaveResult: Sendable, Equatable {
         self.restartDaemon = restartDaemon
     }
 
-    /// Reads the selected context's live login and saves it inside the tool's exclusive section.
-    public func save(_ tool: Tool) async -> SaveResult {
-        guard let adapter = tools[tool]?.scoped(to: state.selectedContext(tool)) else { return .refused("not signed in") }
+    /// Reads the context's live login and saves it inside the tool's exclusive section.
+    public func save(_ context: ToolContext) async -> SaveResult {
+        let tool = context.tool
+        guard let adapter = tools[tool]?.scoped(to: context) else { return .refused("not signed in") }
         let vault = vault
         let result: SaveResult
         do {
@@ -73,9 +74,9 @@ public enum SaveResult: Sendable, Equatable {
         return result
     }
 
-    /// The notice shows as soon as the switch settles; the live refresh, which a running batch can hold up, comes after.
-    public func switchTo(_ key: AccountKey) async -> SwitchOutcome {
-        let context = state.selectedContext(key.tool)
+    /// Switches `context` to the account. The notice shows as soon as the switch settles; the live refresh, which a
+    /// running batch can hold up, comes after.
+    public func switchTo(_ key: AccountKey, in context: ToolContext) async -> SwitchOutcome {
         let outcome = await switcher.switchTo(key, in: context, alongside: state.contexts(key.tool))
         await poller.reloadVault()
         await poller.rereadLive()
@@ -111,9 +112,9 @@ public enum SaveResult: Sendable, Equatable {
         }
     }
 
-    /// Hides the unsaved banner until the tool's live identity changes.
-    public func later(_ tool: Tool) {
-        if case .signedIn(let login) = state.liveState(tool) { dismissedUnsaved[tool] = login.identity.key }
+    /// Hides the context's unsaved banner until its live identity changes.
+    public func later(_ context: ToolContext) {
+        if case .signedIn(let login) = state.liveState(context) { dismissedUnsaved[context] = login.identity.key }
     }
 
     public func dismissNotice() {
@@ -217,8 +218,7 @@ extension AccountCommands {
         return nil
     }
 
-    /// Forgets an added context (its folder and logins are left alone); a selected one hands over to the default. -> why
-    /// not, else nil. Refused while the folder runs on the very login saved for its account and no other context has
+    /// Forgets an added context (its folder and logins are left alone). -> why not, else nil. Refused while the folder runs on the very login saved for its account and no other context has
     /// that account live: once unwatched, renewing the saved login would spend the token the folder runs on.
     public func removeContext(_ context: ToolContext) async -> String? {
         guard !context.isDefault else { return nil }
@@ -235,15 +235,8 @@ extension AccountCommands {
         if tool == .claude { await switcher.settleInterruptedSwitch(contexts: [context]) }
         state.addedContexts[tool]?.removeAll { $0.id == context.id }
         state.live[context.tool]?[context.id] = nil
-        if state.selectedContextID[context.tool] == context.id { selectContext(.default(context.tool)) }
         saveContexts(context.tool)
         return nil
-    }
-
-    /// The context the popover and the manager show, save from and switch.
-    public func selectContext(_ context: ToolContext) {
-        state.selectedContextID[context.tool] = context.id
-        state.defaults.set(context.id, forKey: AppState.selectedKey(context.tool))
     }
 
     private func saveContexts(_ tool: Tool) {

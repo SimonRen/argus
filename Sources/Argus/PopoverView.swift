@@ -7,7 +7,7 @@ import SwiftUI
     var visibleHeight: CGFloat = 800
 }
 
-/// The popover: header, notices, one card per tool, footer (ui/Main.dc.html).
+/// The popover: header, notices, one card per tool context, footer (ui/Main.dc.html).
 struct PopoverView: View {
     let state: AppState
     let commands: AccountCommands
@@ -15,8 +15,8 @@ struct PopoverView: View {
     let preferences: MenuBarPreferences
     let openManager: () -> Void
 
-    /// Tools whose other accounts are listed; kept until the app quits.
-    @State private var expanded: Set<Tool> = []
+    /// Contexts whose other accounts are listed; kept until the app quits.
+    @State private var expanded: Set<ToolContext> = []
     @State private var cardsHeight: CGFloat = 0
     @State private var topHeight: CGFloat = 0
     @State private var footerHeight: CGFloat = 0
@@ -30,8 +30,8 @@ struct PopoverView: View {
     }
 
     private func content(_ t: Theme, now: Date) -> some View {
-        let cards = Tool.allCases.filter(preferences.isInPopover).map { tool in
-            ToolCard.build(state.snapshot(tool).hidingMinorGroups, expanded: expanded.contains(tool), dismissedUnsavedKey: commands.dismissedUnsaved[tool], now: now)
+        let cards = Tool.allCases.flatMap(state.contexts).filter(preferences.isInPopover).map { context in
+            ToolCard.build(state.snapshot(context).hidingMinorGroups, expanded: expanded.contains(context), dismissedUnsavedKey: commands.dismissedUnsaved[context], now: now)
         }
         // The whole popover fits the screen: what's left after the header, notices, footer and the arrow's margin.
         let maxCards = max(240, screen.visibleHeight - topHeight - footerHeight - 32)
@@ -43,7 +43,7 @@ struct PopoverView: View {
             .onGeometryChange(for: CGFloat.self, of: \.size.height) { topHeight = $0 }
             ScrollView {
                 VStack(spacing: 8) {
-                    ForEach(cards, id: \.tool) { CardView(card: $0, theme: t, actions: actions(for: $0.tool)) }
+                    ForEach(cards, id: \.context) { CardView(card: $0, theme: t, actions: actions(for: $0.context)) }
                     if cards.isEmpty {
                         Text("Every tool is hidden here. Turn on Show in popover in Manage accounts…")
                             .font(.system(size: 12)).foregroundStyle(t.sub).multilineTextAlignment(.center).padding(.vertical, 16)
@@ -92,11 +92,11 @@ struct PopoverView: View {
                 }
             }
         }
-        ForEach(cards.filter { $0.unsavedBanner != nil }, id: \.tool) { card in
+        ForEach(cards.filter { $0.unsavedBanner != nil }, id: \.context) { card in
             NoticeView(theme: t, icon: "exclamationmark.triangle", tint: t.warnText, background: t.warnBg, text: card.unsavedBanner!, onDismiss: nil) {
                 HStack(spacing: 6) {
-                    PillButton(title: "Save login", fill: t.ok) { Task { await commands.save(card.tool) } }
-                    PillButton(title: "Later", fill: t.btn, foreground: t.text) { commands.later(card.tool) }
+                    PillButton(title: "Save login", fill: t.ok) { Task { await commands.save(card.context) } }
+                    PillButton(title: "Later", fill: t.btn, foreground: t.text) { commands.later(card.context) }
                 }
             }
         }
@@ -113,12 +113,11 @@ struct PopoverView: View {
         .padding(EdgeInsets(top: 8, leading: 16, bottom: 10, trailing: 16))
     }
 
-    private func actions(for tool: Tool) -> CardView.Actions {
+    private func actions(for context: ToolContext) -> CardView.Actions {
         CardView.Actions(
-            toggle: { if expanded.contains(tool) { expanded.remove(tool) } else { expanded.insert(tool) } },
-            switchTo: { key in Task { await commands.switchTo(key) } },
-            refresh: { key in await commands.refresh(key) },
-            selectContext: commands.selectContext)
+            toggle: { if expanded.contains(context) { expanded.remove(context) } else { expanded.insert(context) } },
+            switchTo: { key in Task { await commands.switchTo(key, in: context) } },
+            refresh: { key in await commands.refresh(key) })
     }
 }
 
@@ -134,7 +133,6 @@ struct CardView: View {
         let toggle: () -> Void
         let switchTo: (AccountKey) -> Void
         let refresh: @MainActor (AccountKey) async -> Void
-        let selectContext: (ToolContext) -> Void
     }
 
     let card: ToolCard
@@ -147,9 +145,7 @@ struct CardView: View {
             HStack(spacing: 8) {
                 ToolMark(tool: card.tool, size: 18)
                 Text(card.tool.displayName).font(.system(size: 12.5, weight: .semibold))
-                if !card.contexts.isEmpty {
-                    ContextPicker(context: card.context, contexts: card.contexts, theme: t, select: actions.selectContext)
-                }
+                if let name = card.contextName { ContextChip(context: card.context, name: name, theme: t) }
                 Spacer()
                 if let more = card.moreLabel {
                     Button(action: actions.toggle) {
@@ -359,31 +355,18 @@ struct ToolMark: View {
 }
 
 /// A tool's context menu: the selected context's name as a chip, the tool's contexts checked in its menu.
-struct ContextPicker: View {
+/// The context a card or manager page is the section of, beside the tool's name; its variable on hover.
+struct ContextChip: View {
     let context: ToolContext
-    let contexts: [ToolContext]
+    let name: String
     let theme: Theme
-    let select: (ToolContext) -> Void
 
     var body: some View {
-        Menu {
-            Picker("\(context.tool.displayName) context", selection: Binding(get: { context.id }, set: { id in
-                if let picked = contexts.first(where: { $0.id == id }) { select(picked) }
-            })) {
-                ForEach(contexts) { Text($0.name).tag($0.id) }
-            }
-            .pickerStyle(.inline).labelsHidden()
-        } label: {
-            HStack(spacing: 3) {
-                Text(context.name).lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 7.5, weight: .bold))
-            }
+        Text(name).lineLimit(1)
             .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(theme.sub)
-            .padding(.horizontal, 6).frame(height: 18).background(theme.chip, in: Capsule())
-        }
-        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-        .help(context.assignment ?? "\(context.tool.displayName)'s default folder")
-        .accessibilityLabel("\(context.tool.displayName) context: \(context.name)")
+            .padding(.horizontal, 6).frame(height: 18).background(theme.chip, in: Capsule()).fixedSize()
+            .help(context.assignment ?? "\(context.tool.displayName)'s default folder")
+            .accessibilityLabel("\(context.tool.displayName) context: \(name)")
     }
 }
 
