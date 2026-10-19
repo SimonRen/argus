@@ -9,7 +9,7 @@ fileprivate func claudeTokenOK(_ tag: String) -> TestHTTPStub.Reply {
 }
 
 fileprivate func payload(_ rig: PollerRig, _ key: AccountKey) async -> VaultEnvelope? {
-    if case .valid(let e)? = await rig.vault.entry(key.tool, id: key.id) { return e }
+    if case .valid(let e)? = await rig.vault.entry(.default(key.tool), id: key.id) { return e }
     return nil
 }
 

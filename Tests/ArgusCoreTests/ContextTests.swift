@@ -59,25 +59,54 @@ fileprivate let start = Date(timeIntervalSince1970: 1_790_000_000)
 
     // MARK: F09-AC-9.c6
 
-    @Test func `REQ/F09-AC-9.c6 each context is its own section, listing its live account and those live nowhere`() async throws {
+    @Test func `REQ/F09-AC-9.c6 each context lists its own saved accounts; removing one from a context leaves the others'`() async throws {
         let a = testLogin(.claude, "a"), b = testLogin(.claude, "b"), c = testLogin(.claude, "c")
         let rig = try PollerRig(live: [.claude: [.signedIn(a)]])
-        for login in [a, b, c] { try await rig.save(login) }
+        for login in [a, c] { try await rig.save(login) }
         await rig.poller.reloadVault()
         let cmds = commands(rig)
         func card(_ context: ToolContext) -> ToolCard {
             ToolCard.build(rig.state.snapshot(context), expanded: true, dismissedUnsavedKey: nil, now: Date())
         }
-        // One context: the tool's plain card, every account listed.
-        #expect(card(.default(.claude)).contextName == nil && card(.default(.claude)).rows.count == 3)
+        // One context: the tool's plain card.
+        #expect(card(.default(.claude)).contextName == nil && card(.default(.claude)).rows.count == 2)
+        // A new context's list starts empty: its live login shows unsaved until saved there.
         let work = await addWork(rig, cmds, live: .signedIn(b))
+        #expect(card(work).rows.map(\.id) == [testKey(b)] && card(work).rows.first?.isSaved == false)
+        #expect(await cmds.save(work) == .saved(email: "b@example.com"))
+        // c signed in separately in Work too: its own grant in its own list.
+        try await rig.vault.save(.signedIn(grant(.claude, "c", "work", expiry: start.addingTimeInterval(3600))), in: work)
+        await rig.poller.reloadVault()
         let main = card(.default(.claude)), other = card(work)
         #expect(main.contextName == "Default" && main.liveRow?.id == testKey(a))
         #expect(other.contextName == "Work" && other.liveRow?.id == testKey(b))
-        // b is listed only in Work, a only in Default; c, live nowhere, can be switched into either.
         #expect(main.rows.map(\.id) == [testKey(a), testKey(c)])
-        #expect(other.rows.map(\.id) == [testKey(b), testKey(c)])
-        #expect(other.rows.allSatisfy { $0.switchDisabledReason == nil })
+        #expect(other.rows.map(\.id) == [testKey(b), testKey(c)] && other.rows.allSatisfy(\.isSaved))
+        await cmds.remove(testKey(c), in: work)
+        #expect(card(work).rows.map(\.id) == [testKey(b)])
+        #expect(card(.default(.claude)).rows.map(\.id) == [testKey(a), testKey(c)])
+    }
+
+    @Test func `REQ/F09-AC-9.c4 an account saved in two contexts is fetched once, with the copy lasting longest, and both show its reading`() async throws {
+        let rig = try PollerRig()
+        try await rig.save(grant(.claude, "c", "home", expiry: start.addingTimeInterval(3600)))
+        let work = await addWork(rig, commands(rig), live: .notSignedIn)
+        try await rig.vault.save(.signedIn(grant(.claude, "c", "work", expiry: start.addingTimeInterval(7200))), in: work)
+        await rig.poller.runBatch()
+        #expect(rig.count("work") == 1 && rig.count("home") == 0)
+        for context in [.default(.claude), work] {
+            #expect(rig.state.snapshot(context).accounts.map { $0.reading != nil } == [true])
+        }
+    }
+
+    @Test func `REQ/F09-AC-9.c5 Save refuses a login another context's list holds: a copied folder`() async throws {
+        let x = testLogin(.codex, "x")
+        let rig = try PollerRig(live: [.codex: [.signedIn(x)]])
+        try await rig.save(x)
+        let cmds = commands(rig)
+        let work = await addWork(rig, cmds, .codex, live: .signedIn(x))
+        #expect(await cmds.save(work) == .refused("this exact login is already saved in another context, and one login in two contexts signs one of them out"))
+        #expect(await rig.vault.entries(work).isEmpty)
     }
 
     @Test func `REQ/F09-AC-9.c6 a section saves its own context's live login and names it in the unsaved banner`() async throws {
@@ -170,16 +199,25 @@ fileprivate let start = Date(timeIntervalSince1970: 1_790_000_000)
 
     // MARK: Hardening
 
-    @Test func `REQ/F09-AC-9.c4 an account live in two contexts is fetched with the login lasting longest and synced back from it`() async throws {
+    @Test func `REQ/F09-AC-9.c4 an account live in two contexts is fetched with the login lasting longest; each context syncs back into its own list`() async throws {
         let old = grant(.codex, "x", "old", expiry: start.addingTimeInterval(-60)), new = grant(.codex, "x", "new", expiry: start.addingTimeInterval(3600))
         let rig = try PollerRig(live: [.codex: [.signedIn(old)]])
         try await rig.save(old)
-        _ = await addWork(rig, commands(rig), .codex, live: .signedIn(new))
+        let cmds = commands(rig)
+        let work = ToolContext(tool: .codex, path: rig.box.root.appending(path: "codex-work").path, name: "Work"), reader = FakeTool(.codex, [.signedIn(new)])
+        rig.tools[.codex]!.add(work, reader)
+        #expect(await cmds.addContext(.codex, path: work.path!, name: "Work") == nil)
+        #expect(await cmds.save(work) == .saved(email: "x@example.com"))
         await rig.poller.runBatch()
         #expect(rig.count("new") == 1 && rig.count("old") == 0)
         #expect(rig.state.status[testKey(old)]?.error == nil)
-        guard case .valid(let entry)? = await rig.vault.entry(.codex, id: testKey(old).id) else { Issue.record("entry gone"); return }
-        #expect(entry.payloadBytes == new.bytes)
+        // Work renews its login: it lands in Work's list, never in the default's.
+        let newer = grant(.codex, "x", "newer", expiry: start.addingTimeInterval(7200))
+        reader.script([.signedIn(newer)])
+        await rig.poller.rereadLive()
+        guard case .valid(let home)? = await rig.vault.entry(.default(.codex), id: testKey(old).id),
+              case .valid(let own)? = await rig.vault.entry(work, id: testKey(old).id) else { Issue.record("entry gone"); return }
+        #expect(home.payloadBytes == old.bytes && own.payloadBytes == newer.bytes)
     }
 
     @Test func `REQ/F09-AC-9.c4 an expired live token in a context names it`() async throws {
@@ -203,28 +241,20 @@ fileprivate let start = Date(timeIntervalSince1970: 1_790_000_000)
         #expect(await CodexTool(env: box.env).readLive() == .unsupported("an API-key sign-in"))
     }
 
-    @Test func `REQ/F09-AC-9.c5 a context running on the saved login can't be removed unless another context has that account live`() async throws {
-        let x = testLogin(.codex, "x")
-        let rig = try PollerRig()
-        try await rig.save(x)
+    @Test func `REQ/F09-AC-9.c5 a removed context's saved logins stay on disk, unread and unrenewed, and come back when it is added again`() async throws {
+        let rig = try PollerRig(renewing: true)
         let cmds = commands(rig)
-        let work = await addWork(rig, cmds, .codex, live: .signedIn(x))
-        #expect(await cmds.removeContext(work) == "Work runs on the login saved for x@example.com. Once Argus stops reading Work, renewing that saved login "
-            + "would sign it out. Sign out of Codex there, or remove the saved login, first.")
-        #expect(rig.state.contexts(.codex).contains(work))
-        // The default context also runs on it: still watched, so the context may go.
-        rig.tools[.codex]!.script([.signedIn(x)])
-        await rig.poller.rereadLive()
+        let work = await addWork(rig, cmds, .codex, live: .signedIn(testLogin(.codex, "x")))
+        #expect(await cmds.save(work) == .saved(email: "x@example.com"))
+        // A saved account due for renewal.
+        try await rig.vault.save(.signedIn(testLogin(.codex, "w", expiry: start.addingTimeInterval(60))), in: work)
         #expect(await cmds.removeContext(work) == nil)
-
-        // A separate sign-in there (another grant) isn't the saved login.
-        let other = try PollerRig()
-        try await other.save(x)
-        let otherCmds = commands(other)
-        let away = await addWork(other, otherCmds, .codex, live: .signedIn(grant(.codex, "x", "own", expiry: start.addingTimeInterval(3600))))
-        // Codex syncs back at once, so the saved login is now Work's own grant again: put the first one back.
-        try await other.save(x)
-        #expect(await otherCmds.removeContext(away) == nil)
+        #expect(rig.state.saved(work).isEmpty && !rig.state.contexts(.codex).contains(work))
+        await rig.poller.runBatch()
+        #expect(rig.tokenRequests.isEmpty && rig.count("w") == 0 && rig.count("x") == 0)
+        #expect(await rig.vault.entries(work).count == 2)
+        #expect(await cmds.addContext(.codex, path: work.path!, name: "Work") == nil)
+        #expect(rig.state.saved(work).count == 2)
     }
 
     @Test func `REQ/F09-AC-9.c5 two contexts on one login (a copied folder) are flagged on both rows`() async throws {

@@ -1,5 +1,7 @@
 # Tool contexts: one live store per config folder, saved accounts shared
 
+> Superseded in part by ADR-0005: each context now keeps its own saved accounts, a switch is refused only for a copied login, and removing a context keeps its list unread instead of being guarded. The live-store rules below still hold.
+
 Claude Code and Codex can each run from more than one folder: Claude Code from `CLAUDE_CONFIG_DIR` (default `~/.claude`), Codex from `CODEX_HOME` (default `~/.codex`). Argus models each folder as a context of its tool: the variable's exact value, or none for the default. The owner adds contexts in the manager, and they are kept in the app's defaults (`contexts.<tool>`). Every context's live login is read. The saved accounts stay global, one vault for all contexts. Each context is its own section in the popover and the manager. A switch writes its section's context only, and it is refused while the target account is live in another context of the same tool. Renewal skips an account live in any context. agy has no contexts. (tech-design §2, F-09)
 
 ## Why

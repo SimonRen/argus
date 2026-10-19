@@ -1,7 +1,7 @@
 import Foundation
 
 /// One place a tool keeps its live login: Claude Code's `CLAUDE_CONFIG_DIR` or Codex's `CODEX_HOME`; the default is
-/// the variable unset. Accounts stay global: a context only decides which live login is read, saved and switched.
+/// the variable unset. Each context keeps its own list of saved logins; an account saved in several shares one reading.
 /// Not `Identifiable`: `id` is unique within its tool only, so a list across tools would merge the default contexts.
 public struct ToolContext: Codable, Sendable, Hashable {
     public let tool: Tool

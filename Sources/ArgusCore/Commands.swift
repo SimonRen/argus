@@ -53,7 +53,7 @@ public enum SaveResult: Sendable, Equatable {
         self.restartDaemon = restartDaemon
     }
 
-    /// Reads the context's live login and saves it inside the tool's exclusive section.
+    /// Reads the context's live login and saves it into the context's list, inside the tool's exclusive section.
     public func save(_ context: ToolContext) async -> SaveResult {
         let tool = context.tool
         guard let adapter = tools[tool]?.scoped(to: context) else { return .refused("not signed in") }
@@ -61,7 +61,7 @@ public enum SaveResult: Sendable, Equatable {
         let result: SaveResult
         do {
             result = try await vault.exclusive(tool) {
-                let envelope = try await vault.save(await adapter.readLive())
+                let envelope = try await vault.save(await adapter.readLive(), in: context)
                 return envelope.generation == 1 ? .saved(email: envelope.label) : .updated(email: envelope.label)
             }
         } catch let error as VaultError {
@@ -152,16 +152,16 @@ extension AccountCommands {
     /// "Removed <email>. Its saved login file was deleted." while Undo is possible.
     public var undoBanner: String? { removedEmail.map { "Removed \($0). Its saved login file was deleted." } }
 
-    /// Deletes the saved login inside the tool's exclusive section, keeping its raw bytes for Undo.
-    public func remove(_ key: AccountKey) async {
+    /// Deletes the saved login from the context's list inside the tool's exclusive section, keeping its raw bytes for Undo.
+    public func remove(_ key: AccountKey, in context: ToolContext) async {
         closeUndo()
-        let email: String = if case .valid(let e)? = state.entries[key.tool]?.first(where: { $0.id == key.id }), !e.label.isEmpty {
+        let email: String = if case .valid(let e)? = state.saved(context).first(where: { $0.id == key.id }), !e.label.isEmpty {
             e.label
         } else {
             "Unknown account"
         }
         let vault = vault
-        if let entry = try? await vault.exclusive(key.tool, { try await vault.remove(key.tool, id: key.id) }) {
+        if let entry = try? await vault.exclusive(key.tool, { try await vault.remove(context, id: key.id) }) {
             removed = entry
             removedEmail = email
         }
@@ -194,7 +194,7 @@ extension AccountCommands {
 
 extension AccountCommands {
     /// Adds a context for `tool` at `path`, as the shell exports it (a leading `~/` is expanded, as the shell does);
-    /// an empty name takes the folder's. -> why not, else nil. Its live login is read at once (no network).
+    /// an empty name takes the folder's. -> why not, else nil. Its saved list and live login are read at once (no network).
     public func addContext(_ tool: Tool, path rawPath: String, name rawName: String) async -> String? {
         guard tool.supportsContexts else { return "\(tool.displayName) has no setting for another folder." }
         var path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -214,28 +214,23 @@ extension AccountCommands {
         }
         state.addedContexts[tool, default: []].append(ToolContext(tool: tool, path: path, name: name))
         saveContexts(tool)
+        // A path added before brings back the list it had.
+        await poller.reloadVault()
         await poller.rereadLive()
         return nil
     }
 
-    /// Forgets an added context (its folder and logins are left alone). -> why not, else nil. Refused while the folder runs on the very login saved for its account and no other context has
-    /// that account live: once unwatched, renewing the saved login would spend the token the folder runs on.
+    /// Forgets an added context. Its folder, its logins and its saved-login files are left alone; Argus stops reading
+    /// and renewing them until the same path is added again. -> why not, else nil.
     public func removeContext(_ context: ToolContext) async -> String? {
         guard !context.isDefault else { return nil }
         let tool = context.tool
-        if case .signedIn(let login)? = await tools[tool]?.scoped(to: context).readLive(), let refresh = login.tokens.refreshToken,
-           case .valid(let saved)? = await vault.entry(tool, id: login.identity.fileID),
-           saved.payloadBytes.flatMap({ tokenSet(tool, bytes: $0) })?.refreshToken == refresh,
-           !state.liveContexts(AccountKey(tool: tool, id: login.identity.fileID)).contains(where: { $0.id != context.id }) {
-            let email = login.label.isEmpty ? "its account" : login.label
-            return "\(context.name) runs on the login saved for \(email). Once Argus stops reading \(context.name), renewing that saved login "
-                + "would sign it out. Sign out of \(tool.displayName) there, or remove the saved login, first."
-        }
         // A switch there cut short is finished while the context is still known.
         if tool == .claude { await switcher.settleInterruptedSwitch(contexts: [context]) }
         state.addedContexts[tool]?.removeAll { $0.id == context.id }
-        state.live[context.tool]?[context.id] = nil
-        saveContexts(context.tool)
+        state.live[tool]?[context.id] = nil
+        state.entries[tool]?[context.id] = nil
+        saveContexts(tool)
         return nil
     }
 

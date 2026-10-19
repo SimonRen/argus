@@ -73,8 +73,8 @@ fileprivate actor Log {
         let url = fileURL(box, .claude, live.identity.fileID)
         #expect(mode(url) == 0o600)
         #expect(files(box, .claude) == ["\(live.identity.fileID).json"])
-        #expect(await vault.entries(.claude) == [.valid(envelope)])
-        #expect(await vault.entry(.claude, id: live.identity.fileID) == .valid(envelope))
+        #expect(await vault.entries(.default(.claude)) == [.valid(envelope)])
+        #expect(await vault.entry(.default(.claude), id: live.identity.fileID) == .valid(envelope))
     }
 
     // MARK: F02-AC-2.c2
@@ -92,7 +92,7 @@ fileprivate actor Log {
         #expect(envelope.generation == 2)
         #expect(envelope.payloadBytes == utf8("test-credential-2"))
         #expect(try Data(contentsOf: fileURL(box, .codex, id).appendingPathExtension("prev")) == before)
-        #expect(await vault.entries(.codex).count == 1)
+        #expect(await vault.entries(.default(.codex)).count == 1)
         #expect(files(box, .codex) == ["\(id).json", "\(id).json.prev"])
     }
 
@@ -102,7 +102,7 @@ fileprivate actor Log {
         let live = login(.agy)
         #expect(try await vault.save(.signedIn(live), origin: .kept).kept)
         #expect(try await vault.save(.signedIn(live), origin: .syncBack).kept)
-        #expect(try await vault.replacePayload(.agy, id: live.identity.fileID, bytes: utf8("test-credential-3"), origin: .renewal).kept)
+        #expect(try await vault.replacePayload(.default(.agy), id: live.identity.fileID, bytes: utf8("test-credential-3"), origin: .renewal).kept)
         #expect(!(try await vault.save(.signedIn(live), origin: .save).kept))
         #expect(!(try await vault.save(.signedIn(login(.agy, subject: "sub-new")), origin: .syncBack).kept))
     }
@@ -112,13 +112,13 @@ fileprivate actor Log {
         let vault = try Vault(supportRoot: box.supportRoot, now: { fixedNow })
         let live = login(.agy, clientID: "client-1")
         let saved = try await vault.save(.signedIn(live))
-        let renewed = try await vault.replacePayload(.agy, id: live.identity.fileID, bytes: utf8("test-credential-9"), origin: .renewal)
+        let renewed = try await vault.replacePayload(.default(.agy), id: live.identity.fileID, bytes: utf8("test-credential-9"), origin: .renewal)
         #expect(renewed.generation == saved.generation + 1)
         #expect(renewed.origin == .renewal)
         #expect(renewed.payloadBytes == utf8("test-credential-9"))
         #expect(renewed.identity == saved.identity && renewed.label == saved.label && renewed.clientId == "client-1")
         await #expect(throws: VaultError.self) {
-            try await vault.replacePayload(.agy, id: String(repeating: "0", count: 64), bytes: Data(), origin: .renewal)
+            try await vault.replacePayload(.default(.agy), id: String(repeating: "0", count: 64), bytes: Data(), origin: .renewal)
         }
     }
 
@@ -131,10 +131,10 @@ fileprivate actor Log {
         let team = login(.codex, email: "bob@example.com", scope: "acct-team", bytes: "test-credential-t")
         try await vault.save(.signedIn(personal))
         try await vault.save(.signedIn(team))
-        #expect(await vault.entries(.codex).count == 2)
+        #expect(await vault.entries(.default(.codex)).count == 2)
         let teamBytes = try Data(contentsOf: fileURL(box, .codex, team.identity.fileID))
-        _ = try await vault.remove(.codex, id: personal.identity.fileID)
-        #expect(await vault.entries(.codex).map(\.id) == [team.identity.fileID])
+        _ = try await vault.remove(.default(.codex), id: personal.identity.fileID)
+        #expect(await vault.entries(.default(.codex)).map(\.id) == [team.identity.fileID])
         #expect(try Data(contentsOf: fileURL(box, .codex, team.identity.fileID)) == teamBytes)
     }
 
@@ -164,7 +164,7 @@ fileprivate actor Log {
         let incomplete = login(.claude, scope: nil)
         let envelope = try await vault.save(.signedIn(incomplete), origin: .kept, allowIncomplete: true)
         #expect(envelope.identityKey.hasPrefix("claude:incomplete:"))
-        #expect(await vault.entries(.claude).count == 1)
+        #expect(await vault.entries(.default(.claude)).count == 1)
     }
 
     // MARK: F02-AC-2.c5
@@ -180,8 +180,8 @@ fileprivate actor Log {
         await #expect(throws: VaultError.self) { try await faulty.save(.signedIn(login(.agy, bytes: "test-credential-2"))) }
         #expect(try Data(contentsOf: fileURL(box, .agy, id)) == before)
         #expect(files(box, .agy).contains { $0.hasSuffix(".tmp") })
-        #expect(await vault.entries(.agy).map(\.id) == [id])
-        guard case .valid(let current) = await vault.entry(.agy, id: id) else { Issue.record("entry not valid"); return }
+        #expect(await vault.entries(.default(.agy)).map(\.id) == [id])
+        guard case .valid(let current) = await vault.entry(.default(.agy), id: id) else { Issue.record("entry not valid"); return }
         #expect(current.payloadBytes == utf8("test-credential-1"))
     }
 
@@ -195,7 +195,7 @@ fileprivate actor Log {
         try box.write("support/vault/agy/\(live.identity.fileID).json.garbage.tmp", "{")
         let relaunched = try Vault(supportRoot: box.supportRoot)
         #expect(!files(box, .agy).contains { $0.hasSuffix(".tmp") })
-        guard case .valid(let current) = await relaunched.entry(.agy, id: live.identity.fileID) else { Issue.record("not valid"); return }
+        guard case .valid(let current) = await relaunched.entry(.default(.agy), id: live.identity.fileID) else { Issue.record("not valid"); return }
         #expect(current.generation == 2)
         #expect(current.payloadBytes == utf8("test-credential-2"))
     }
@@ -228,10 +228,10 @@ fileprivate actor Log {
         let id = live.identity.fileID
         try box.write("support/vault/claude/\(id).json", "{\"v\":1,\"broken\":true}")
         let before = try Data(contentsOf: fileURL(box, .claude, id))
-        guard case .unreadable(let tool, let entryID, _) = await vault.entries(.claude).first else { Issue.record("not unreadable"); return }
+        guard case .unreadable(let tool, let entryID, _) = await vault.entries(.default(.claude)).first else { Issue.record("not unreadable"); return }
         #expect(tool == .claude && entryID == id)
         await #expect(throws: VaultError("unreadable vault entry")) { try await vault.save(.signedIn(live)) }
-        await #expect(throws: VaultError.self) { try await vault.replacePayload(.claude, id: id, bytes: utf8("x"), origin: .renewal) }
+        await #expect(throws: VaultError.self) { try await vault.replacePayload(.default(.claude), id: id, bytes: utf8("x"), origin: .renewal) }
         #expect(try Data(contentsOf: fileURL(box, .claude, id)) == before)
     }
 
@@ -247,15 +247,15 @@ fileprivate actor Log {
         let badPayload = good.replacingOccurrences(of: saved.payload, with: "%%%")
         let badVersion = good.replacingOccurrences(of: "\"v\":1", with: "\"v\":2")
         try box.write("support/vault/agy/\(live.identity.fileID).json", good)
-        let entries = await vault.entries(.codex)
+        let entries = await vault.entries(.default(.codex))
         #expect(entries.count == 2)
         #expect(entries.contains { if case .unreadable(_, let id, _) = $0 { id == other } else { false } })
-        guard case .unreadable = await vault.entries(.claude).first, case .unreadable = await vault.entries(.agy).first else {
+        guard case .unreadable = await vault.entries(.default(.claude)).first, case .unreadable = await vault.entries(.default(.agy)).first else {
             Issue.record("tool mismatch not unreadable"); return
         }
         for text in [badPayload, badVersion] {
             try box.write("support/vault/codex/\(live.identity.fileID).json", text)
-            guard case .unreadable = await vault.entry(.codex, id: live.identity.fileID) else { Issue.record("accepted \(text.prefix(20))"); continue }
+            guard case .unreadable = await vault.entry(.default(.codex), id: live.identity.fileID) else { Issue.record("accepted \(text.prefix(20))"); continue }
         }
     }
 
@@ -279,7 +279,7 @@ fileprivate actor Log {
         let vault = try Vault(supportRoot: box.supportRoot)
         let envelope = try await vault.save(.signedIn(login(.agy, clientID: OAuthClients.antigravityClientID)))
         #expect(envelope.clientId == OAuthClients.antigravityClientID)
-        guard case .valid(let read) = await vault.entries(.agy).first else { Issue.record("not saved"); return }
+        guard case .valid(let read) = await vault.entries(.default(.agy)).first else { Issue.record("not saved"); return }
         #expect(read.clientId == OAuthClients.antigravityClientID)
     }
 
@@ -308,8 +308,8 @@ fileprivate actor Log {
         }
         await collect { try await vault.save(.signedIn(login(.codex))) }
         await collect { try await faulty.save(.signedIn(live)) }
-        await collect { try await vault.replacePayload(.agy, id: "missing", bytes: utf8("test-credential-1"), origin: .renewal) }
-        await collect { _ = try await vault.remove(.agy, id: "missing") }
+        await collect { try await vault.replacePayload(.default(.agy), id: "missing", bytes: utf8("test-credential-1"), origin: .renewal) }
+        await collect { _ = try await vault.remove(.default(.agy), id: "missing") }
         #expect(errors.count == 9)
         for error in errors {
             for secret in secrets { #expect(!error.description.contains(secret)) }
@@ -326,7 +326,7 @@ fileprivate actor Log {
         try await vault.save(.signedIn(live))
         let id = live.identity.fileID
         let bytes = try Data(contentsOf: fileURL(box, .claude, id))
-        let removed = try await vault.remove(.claude, id: id)
+        let removed = try await vault.remove(.default(.claude), id: id)
         #expect(removed.bytes == bytes)
         #expect(files(box, .claude).isEmpty)
         #expect(try await vault.restore(removed))

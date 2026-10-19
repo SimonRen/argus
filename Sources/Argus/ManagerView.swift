@@ -289,7 +289,7 @@ extension ManagerView {
             HStack {
                 Text("CONTEXTS").font(.system(size: 10.5, weight: .semibold)).kerning(0.4).foregroundStyle(t.ter)
                 Spacer()
-                Text("Folders \(tool.displayName) runs from, chosen by \(variable). Saved accounts are shared by all.")
+                Text("Folders \(tool.displayName) runs from, chosen by \(variable). Each keeps its own saved accounts.")
                     .font(.system(size: 11)).foregroundStyle(t.ter).lineLimit(1)
             }
             .padding(.horizontal, 16).padding(.vertical, 8).background(t.thead)
@@ -405,7 +405,7 @@ private struct ManagerRowView: View {
                 if armed {
                     PillButton(title: "Remove", fill: t.barLow) {
                         armed = false
-                        Task { await commands.remove(row.id) }
+                        Task { await commands.remove(row.id, in: context) }
                     }
                     .help("Click to delete this saved login").accessibilityLabel("Confirm removing \(row.email)")
                     iconButton("xmark", help: "Keep this saved login", enabled: true, t) { armed = false }

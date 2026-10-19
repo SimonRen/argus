@@ -56,7 +56,7 @@ public struct ToolSnapshot: Sendable, Equatable {
     public let tool: Tool
     /// The context's live login; nil before the first read.
     public let live: LiveState?
-    /// The vault entries not live in another context, plus an unsaved live login; no order promised.
+    /// The context's saved logins, plus an unsaved live login; no order promised.
     public let accounts: [AccountSnapshot]
     public let rateLimitedUntil: Date?
     /// The context shown, and every context of the tool (the default first).
@@ -108,7 +108,8 @@ extension ToolSnapshot {
     public internal(set) var addedContexts: [Tool: [ToolContext]] = [:]
     /// Per tool, per context id: the live login last read.
     public internal(set) var live: [Tool: [String: LiveState]] = [:]
-    public internal(set) var entries: [Tool: [VaultEntry]] = [:]
+    /// Per tool, per context id: that context's saved logins.
+    public internal(set) var entries: [Tool: [String: [VaultEntry]]] = [:]
     public internal(set) var status: [AccountKey: AccountStatus] = [:]
     /// Per account: no allowance request before this (its 429 backoff). Vendors limit per account, not per vendor.
     public internal(set) var rateLimitedUntil: [AccountKey: Date] = [:]
@@ -146,6 +147,9 @@ extension ToolSnapshot {
     /// The context's live login; nil before its first read.
     public func liveState(_ context: ToolContext) -> LiveState? { live[context.tool]?[context.id] }
 
+    /// The context's saved logins.
+    public func saved(_ context: ToolContext) -> [VaultEntry] { entries[context.tool]?[context.id] ?? [] }
+
     /// The contexts the account is live in, in `contexts` order.
     public func liveContexts(_ key: AccountKey) -> [ToolContext] {
         contexts(key.tool).filter { context in
@@ -163,13 +167,13 @@ extension ToolSnapshot {
         }
     }
 
-    /// One context's section. An account live in another context is listed only there: it can't be switched in here.
+    /// One context's section: its own saved logins. An account saved in several contexts shares one status.
     public func snapshot(_ context: ToolContext) -> ToolSnapshot {
         let tool = context.tool, contexts = contexts(tool)
         let liveState = liveState(context)
         let liveLogin: LiveLogin? = if case .signedIn(let l) = liveState { l } else { nil }
         let liveID = liveLogin?.identity.fileID
-        var accounts: [AccountSnapshot] = (entries[tool] ?? []).map { entry in
+        var accounts: [AccountSnapshot] = saved(context).map { entry in
             let key = AccountKey(tool: tool, id: entry.id)
             switch entry {
             case .valid(let e):
@@ -179,7 +183,6 @@ extension ToolSnapshot {
                 return account(key, label: "", plan: nil, isLive: key.id == liveID, isSaved: true, kept: false, derived: .unreadable)
             }
         }
-        accounts.removeAll { !$0.isLive && !liveContexts($0.key).isEmpty }
         if let liveLogin, let liveID, !accounts.contains(where: { $0.key.id == liveID }) {
             accounts.append(account(AccountKey(tool: tool, id: liveID), label: liveLogin.label, plan: liveLogin.plan, isLive: true,
                                     isSaved: false, kept: false, derived: liveLogin.identity.isComplete ? .ok : .incomplete))

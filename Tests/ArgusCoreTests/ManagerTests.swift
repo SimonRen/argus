@@ -26,7 +26,7 @@ import ArgusCore
         let cmds = commands(rig)
         await rig.poller.runBatch()
         #expect(rig.count("b") == 1)
-        await cmds.remove(key)
+        await cmds.remove(key, in: .default(key.tool))
         #expect(!FileManager.default.fileExists(atPath: file(rig, key).path))
         #expect(!FileManager.default.fileExists(atPath: file(rig, key).path + ".prev"))
         #expect(!rig.state.snapshot(.default(.codex)).accounts.contains { $0.key == key })
@@ -45,16 +45,16 @@ import ArgusCore
         let gate = TestGate()
         let vault = rig.vault
         let rotated = testCredential(.claude, "b2").bytes
-        let renewal = Task { try await vault.exclusive(.claude) { await gate.wait(); try await vault.replacePayload(.claude, id: key.id, bytes: rotated, origin: .renewal) } }
+        let renewal = Task { try await vault.exclusive(.claude) { await gate.wait(); try await vault.replacePayload(.default(.claude), id: key.id, bytes: rotated, origin: .renewal) } }
         try await Task.sleep(for: .milliseconds(30))
-        let removal = Task { await cmds.remove(key) }
+        let removal = Task { await cmds.remove(key, in: .default(key.tool)) }
         try await Task.sleep(for: .milliseconds(30))
         #expect(FileManager.default.fileExists(atPath: file(rig, key).path))
         await gate.release()
         _ = try await renewal.value
         await removal.value
         await cmds.undo()
-        guard case .valid(let restored)? = await rig.vault.entry(.claude, id: key.id) else { Issue.record("not restored"); return }
+        guard case .valid(let restored)? = await rig.vault.entry(.default(.claude), id: key.id) else { Issue.record("not restored"); return }
         #expect(restored.payloadBytes == rotated)
     }
 
@@ -64,7 +64,7 @@ import ArgusCore
         let key = try await rig.save(live)
         let cmds = commands(rig)
         await rig.poller.runBatch()
-        await cmds.remove(key)
+        await cmds.remove(key, in: .default(key.tool))
         let account = try #require(rig.state.snapshot(.default(.agy)).accounts.first)
         #expect(account.isLive && !account.isSaved)
     }
@@ -118,7 +118,7 @@ import ArgusCore
         let key = try await rig.save(testLogin(.codex, "b"))
         let bytes = try Data(contentsOf: file(rig, key))
         let cmds = commands(rig)
-        await cmds.remove(key)
+        await cmds.remove(key, in: .default(key.tool))
         await cmds.undo()
         #expect(try Data(contentsOf: file(rig, key)) == bytes)
         #expect(cmds.undoBanner == nil)
@@ -131,7 +131,7 @@ import ArgusCore
         let rig = try PollerRig()
         let key = try await rig.save(testLogin(.codex, "b"))
         let cmds = commands(rig)
-        await cmds.remove(key)
+        await cmds.remove(key, in: .default(key.tool))
         try await rig.save(testLogin(.codex, "b", expiry: Date(timeIntervalSince1970: 4_100_000_000)))
         let newer = try Data(contentsOf: file(rig, key))
         await cmds.undo()
@@ -146,15 +146,15 @@ import ArgusCore
         let b = try await rig.save(testLogin(.codex, "b"))
         let c = try await rig.save(testLogin(.codex, "c"))
         let cmds = commands(rig)
-        await cmds.remove(b)
+        await cmds.remove(b, in: .default(b.tool))
         cmds.closeUndo()
         #expect(cmds.undoBanner == nil)
         await cmds.undo()
         #expect(!FileManager.default.fileExists(atPath: file(rig, b).path))
         try await rig.save(testLogin(.codex, "b"))
         await rig.poller.reloadVault()
-        await cmds.remove(b)
-        await cmds.remove(c)
+        await cmds.remove(b, in: .default(b.tool))
+        await cmds.remove(c, in: .default(c.tool))
         #expect(cmds.undoBanner == "Removed c@example.com. Its saved login file was deleted.")
         await cmds.undo()
         #expect(FileManager.default.fileExists(atPath: file(rig, c).path))

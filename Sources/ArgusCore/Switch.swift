@@ -142,8 +142,8 @@ public enum CodexDaemon {
 /// Swaps a tool's live login for a saved one, in place, inside that tool's exclusive section.
 public struct Switcher: Sendable {
     private(set) var env: ToolEnvironment
-    /// The named context switched, for the notices; nil for the default.
-    private var contextName: String?
+    /// The context switched; nil for the default.
+    private var context: ToolContext?
     let vault: Vault
     let processes: ProcessListing
     let lockTiming: ClaudeLockTiming
@@ -161,8 +161,8 @@ public struct Switcher: Sendable {
         self.now = now
     }
 
-    /// Switches `context` (nil: the default) to the account; refused while that account is live in another of
-    /// `alongside`, since two contexts on one login spend each other's refresh token.
+    /// Switches `context` (nil: the default) to the account saved in its list; refused while the saved login is the very
+    /// one another context of `alongside` runs on (a copied folder), since the two would spend each other's refresh token.
     public func switchTo(_ key: AccountKey, in context: ToolContext? = nil, alongside contexts: [ToolContext] = []) async -> SwitchOutcome {
         let switcher = context.map(scoped) ?? self
         do {
@@ -175,9 +175,12 @@ public struct Switcher: Sendable {
     private func scoped(_ context: ToolContext) -> Switcher {
         var switcher = self
         switcher.env = env.scoped(to: context)
-        switcher.contextName = context.isDefault ? nil : context.name
+        switcher.context = context
         return switcher
     }
+
+    /// The context whose saved logins this switch reads and keeps.
+    private func list(_ tool: Tool) -> ToolContext { context.flatMap { $0.tool == tool ? $0 : nil } ?? .default(tool) }
 
     // MARK: - Transaction
 
@@ -201,7 +204,7 @@ public struct Switcher: Sendable {
 
     private func transaction(_ key: AccountKey, alongside contexts: [ToolContext]) async -> SwitchOutcome {
         let target: VaultEnvelope
-        switch await vault.entry(key.tool, id: key.id) {
+        switch await vault.entry(list(key.tool), id: key.id) {
         case nil: return .refused("That saved account is gone.")
         case .unreadable: return .refused("Unreadable vault entry")
         case .valid(let e):
@@ -211,12 +214,13 @@ public struct Switcher: Sendable {
             target = e
         }
         guard let payload = target.payloadBytes else { return .refused("Unreadable vault entry") }
+        let refresh = tokenSet(key.tool, bytes: payload)?.refreshToken
         for other in contexts where other.tool == key.tool && other.path != env.contextPaths[key.tool] {
             switch await adapter(key.tool).scoped(to: other).readLive() {
-            case .signedIn(let login) where login.identity.key == target.identityKey:
+            case .signedIn(let login) where refresh != nil && login.tokens.refreshToken == refresh:
                 let email = target.label.isEmpty ? "That account" : target.label
-                return .refused("\(email) is already live in \(other.name). To use it here too, sign in with \(key.tool.displayName) itself: "
-                    + "one login copied into two contexts signs one of them out. Nothing was written.")
+                return .refused("\(email)'s saved login is the very one \(other.name) runs on, so one of them would be signed out at the next renewal. "
+                    + "Sign in with \(key.tool.displayName) itself here to use it in both. Nothing was written.")
             case .unknown:
                 // It may hold the target: switching now could put one login in two contexts.
                 return .refused("\(other.name)'s login can't be read right now, so switching \(named(key.tool)) is paused. Nothing was written — retry in a moment.")
@@ -287,7 +291,7 @@ public struct Switcher: Sendable {
         }
         if keychainNow.map(sha256Hex) != journal.keychainBefore, claude.readAccount().bytes.map(sha256Hex) == journal.accountBefore {
             let config = claude.configURL.resolvingSymlinksInPath()
-            guard case .valid(let target)? = await vault.entry(.claude, id: journal.target), let account = target.claudeAccount,
+            guard case .valid(let target)? = await vault.entry(list(.claude), id: journal.target), let account = target.claudeAccount,
                   let current = fileSnapshot(config), let spliced = Self.splice(account: Data(account.utf8), into: current),
                   writeFileAtomically(spliced, to: config) else { return false }
         }
@@ -296,7 +300,7 @@ public struct Switcher: Sendable {
     }
 
     /// The tool's name, with the context's when it isn't the default: "Claude Code (Work)".
-    private func named(_ tool: Tool) -> String { tool.displayName + (contextName.map { " (\($0))" } ?? "") }
+    private func named(_ tool: Tool) -> String { tool.displayName + (context.flatMap { $0.isDefault ? nil : " (\($0.name))" } ?? "") }
 
     private func swap(to target: VaultEnvelope, payload: Data) async -> SwitchOutcome {
         let tool = target.tool
@@ -339,19 +343,20 @@ public struct Switcher: Sendable {
         return notice(target)
     }
 
-    /// Step 3: the outgoing login is synced back to its entry, or kept as a new one.
+    /// Step 3: the outgoing login is synced back to its entry in the context's list, or kept there as a new one.
     private func keepOutgoing(_ live: LiveState, _ login: LiveLogin) async -> Bool {
+        let list = list(login.identity.tool)
         do {
             if !login.identity.isComplete {
-                try await vault.save(live, origin: .kept, allowIncomplete: true)
-            } else if case .valid = await vault.entry(login.identity.tool, id: login.identity.fileID) {
-                try await vault.save(live, origin: .syncBack)
+                try await vault.save(live, in: list, origin: .kept, allowIncomplete: true)
+            } else if case .valid = await vault.entry(list, id: login.identity.fileID) {
+                try await vault.save(live, in: list, origin: .syncBack)
             } else {
-                try await vault.save(live, origin: .kept)
+                try await vault.save(live, in: list, origin: .kept)
             }
             return true
         } catch let error as VaultError where error.sharedWith != nil {
-            // Those exact tokens are already saved under another account: nothing of the outgoing login to keep.
+            // Those exact tokens are already saved, under another account or in another context's list: nothing to keep.
             return true
         } catch {
             return false

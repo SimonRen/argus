@@ -12,7 +12,7 @@ fileprivate func refreshed(_ tool: Tool, _ tag: String, _ marker: String) -> Liv
 }
 
 fileprivate func entry(_ rig: PollerRig, _ key: AccountKey) async -> VaultEnvelope? {
-    if case .valid(let e)? = await rig.vault.entry(key.tool, id: key.id) { return e }
+    if case .valid(let e)? = await rig.vault.entry(.default(key.tool), id: key.id) { return e }
     return nil
 }
 
@@ -77,7 +77,7 @@ fileprivate func entry(_ rig: PollerRig, _ key: AccountKey) async -> VaultEnvelo
     @Test func `REQ/F04-AC-4.c24 an unsaved live login is never written by a sync-back`() async throws {
         let rig = try PollerRig(live: [.codex: [.signedIn(testLogin(.codex, "e"))]])
         await rig.poller.runBatch()
-        #expect(await rig.vault.entries(.codex).isEmpty)
+        #expect(await rig.vault.entries(.default(.codex)).isEmpty)
     }
 
     // MARK: F04-AC-4.c25

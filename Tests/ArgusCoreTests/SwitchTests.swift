@@ -118,8 +118,9 @@ fileprivate final class Fixture: @unchecked Sendable {
 
     /// Saves the current live login and returns its key.
     @discardableResult
-    func saveLive(_ tool: Tool, origin: VaultOrigin = .save) async throws -> AccountKey {
-        let envelope = try await vault.save(await live(tool), origin: origin)
+    /// Saves the default context's live login into `list`'s saved logins (nil: the default's).
+    func saveLive(_ tool: Tool, in list: ToolContext? = nil, origin: VaultOrigin = .save) async throws -> AccountKey {
+        let envelope = try await vault.save(await live(tool), in: list, origin: origin)
         return AccountKey(tool: tool, id: envelope.identity.fileID)
     }
 
@@ -150,7 +151,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         #expect(f.writes.count == writesBefore)
         #expect(try Data(contentsOf: f.authURL) == auth)
         #expect(try Data(contentsOf: f.configURL) == config)
-        guard case .valid(let entry) = await f.vault.entry(.codex, id: key.id) else { Issue.record("entry gone"); return }
+        guard case .valid(let entry) = await f.vault.entry(.default(.codex), id: key.id) else { Issue.record("entry gone"); return }
         #expect(entry.generation == 1)
         #expect(f.box.violations.isEmpty)
     }
@@ -207,13 +208,13 @@ fileprivate final class Fixture: @unchecked Sendable {
         try f.box.write("codex/auth.json", refreshed)
         let outcome = await f.switcher(faults: SwitchFaults(failAt: .writeCodexAuth)).switchTo(target)
         #expect(outcome == .failed("Switch failed — Codex still uses a@example.com"))
-        guard case .valid(let entry) = await f.vault.entry(.codex, id: outgoing.id) else { Issue.record("entry gone"); return }
+        guard case .valid(let entry) = await f.vault.entry(.default(.codex), id: outgoing.id) else { Issue.record("entry gone"); return }
         #expect(entry.payloadBytes == utf8(refreshed))
         #expect(entry.kept)
         #expect(entry.origin == .syncBack)
         #expect(try Data(contentsOf: f.authURL) == utf8(refreshed))
         guard case .switched = await f.switcher().switchTo(target) else { Issue.record("switch failed"); return }
-        guard case .valid(let after) = await f.vault.entry(.codex, id: outgoing.id) else { Issue.record("entry gone"); return }
+        guard case .valid(let after) = await f.vault.entry(.default(.codex), id: outgoing.id) else { Issue.record("entry gone"); return }
         #expect(after.kept && after.payloadBytes == utf8(refreshed))
     }
 
@@ -225,7 +226,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         let target = try await f.saveLive(.agy)
         await f.seedAgy("a")
         guard case .switched = await f.switcher().switchTo(target) else { Issue.record("switch failed"); return }
-        let entries = await f.vault.entries(.agy)
+        let entries = await f.vault.entries(.default(.agy))
         #expect(entries.count == 2)
         let kept = entries.compactMap { if case .valid(let e) = $0, e.identityKey == "agy:sub-a" { e } else { nil } }.first
         #expect(kept?.kept == true)
@@ -245,7 +246,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         let target = try await f.saveLive(.codex)
         try FileManager.default.removeItem(at: f.authURL)
         guard case .switched = await f.switcher().switchTo(target) else { Issue.record("absent: switch failed"); return }
-        #expect(await f.vault.entries(.codex).count == 1)
+        #expect(await f.vault.entries(.default(.codex)).count == 1)
         #expect(try Data(contentsOf: f.authURL) == utf8(codexAuth("b")))
 
         let g = try Fixture()
@@ -255,7 +256,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         #expect(await g.box.keychain.write(service: claudeService, account: "tester", value: utf8(#"{"claudeAiOauth":{"accessToken":"","refreshToken":""}}"#)) == .written)
         #expect(await g.live(.claude) == .wiped)
         guard case .switched = await g.switcher().switchTo(claudeTarget) else { Issue.record("wiped: switch failed"); return }
-        #expect(await g.vault.entries(.claude).count == 1)
+        #expect(await g.vault.entries(.default(.claude)).count == 1)
         #expect(await g.liveKey(.claude) == "claude:b@example.com:org-b")
     }
 
@@ -271,7 +272,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         try await f.seedClaude("c")
         try f.box.write("home/.claude.json", "{\"numStartups\": 3}\n")
         guard case .switched = await f.switcher().switchTo(target) else { Issue.record("switch failed"); return }
-        let entries = await f.vault.entries(.claude)
+        let entries = await f.vault.entries(.default(.claude))
         #expect(entries.count == 3)
         let incomplete = entries.compactMap { if case .valid(let e) = $0, !e.identity.isComplete { e } else { nil } }
         #expect(incomplete.count == 1)
@@ -543,7 +544,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         #expect(outcome == .failed("Switch failed — Claude Code still uses a@example.com"))
         #expect(await f.claudeKeychain() == itemBefore)
         #expect(try Data(contentsOf: f.configURL) == configBefore)
-        guard case .valid(let entry) = await f.vault.entry(.claude, id: outgoing.id) else { Issue.record("no entry"); return }
+        guard case .valid(let entry) = await f.vault.entry(.default(.claude), id: outgoing.id) else { Issue.record("no entry"); return }
         #expect(entry.origin == .syncBack && entry.generation == 2)
         #expect(f.lockURLs.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
         #expect(f.box.violations.isEmpty)
@@ -558,7 +559,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         let outcome = await f.switcher(faults: SwitchFaults(failAt: step)).switchTo(target)
         #expect(outcome == .failed("Switch failed — Codex still uses a@example.com"))
         #expect(try Data(contentsOf: f.authURL) == utf8(codexAuth("a")))
-        guard case .valid(let kept) = await f.vault.entries(.codex).first(where: { $0.id != target.id }) else { Issue.record("no kept entry"); return }
+        guard case .valid(let kept) = await f.vault.entries(.default(.codex)).first(where: { $0.id != target.id }) else { Issue.record("no kept entry"); return }
         #expect(kept.kept)
     }
 
@@ -575,7 +576,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         #expect(await f.agyKeychain() == .found(utf8(agyValue("a"))))
         #expect(!FileManager.default.fileExists(atPath: f.agyFolder.appending(path: "antigravity-oauth-token").path))
         #expect(try Data(contentsOf: f.agyFolder.appending(path: "settings.json")) == utf8(settingsText))
-        #expect(await f.vault.entries(.agy).count == 2)
+        #expect(await f.vault.entries(.default(.agy)).count == 2)
         #expect(f.box.violations.isEmpty)
     }
 
@@ -586,7 +587,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         try f.seedCodex("a")
         #expect(await f.switcher(faults: SwitchFaults(failAt: .syncBack)).switchTo(target) == .failed("Switch failed — Codex still uses a@example.com"))
         #expect(try Data(contentsOf: f.authURL) == utf8(codexAuth("a")))
-        #expect(await f.vault.entries(.codex).count == 1)
+        #expect(await f.vault.entries(.default(.codex)).count == 1)
     }
 
     @Test func `REQ/F03-AC-3.c10 an existing agy token file gets its old bytes back`() async throws {
@@ -640,7 +641,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         let renewal = Task {
             try await vault.exclusive(.codex) {
                 await gate.wait()
-                try await vault.replacePayload(.codex, id: target.id, bytes: utf8(renewed), origin: .renewal)
+                try await vault.replacePayload(.default(.codex), id: target.id, bytes: utf8(renewed), origin: .renewal)
             }
         }
         try await Task.sleep(for: .milliseconds(50))
@@ -737,10 +738,10 @@ fileprivate final class Fixture: @unchecked Sendable {
 
     @Test func `REQ/F09-AC-9.c1 a switch in a Claude context writes its own Keychain item and .claude.json under its own locks, the default untouched`() async throws {
         let f = try Fixture()
-        try await f.seedClaude("b")
-        let target = try await f.saveLive(.claude)
-        try await f.seedClaude("a")
         let work = try await claudeContext(f, "c")
+        try await f.seedClaude("b")
+        let target = try await f.saveLive(.claude, in: work)
+        try await f.seedClaude("a")
         let dir = work.path!
         let locks = [URL(fileURLWithPath: dir + "/.oauth_refresh.lock"), URL(fileURLWithPath: dir + ".lock"), URL(fileURLWithPath: dir + "/.claude.json.lock")]
         var env = f.box.env
@@ -754,35 +755,39 @@ fileprivate final class Fixture: @unchecked Sendable {
         #expect(try String(contentsOf: URL(fileURLWithPath: dir + "/.claude.json"), encoding: .utf8) == claudeConfig(claudeAccount("b")))
         #expect(await f.liveKey(.claude) == "claude:a@example.com:org-a")
         #expect(try String(contentsOf: f.configURL, encoding: .utf8) == claudeConfig(claudeAccount("a")))
-        // The outgoing context login was kept like any other.
+        // The outgoing context login was kept in the context's own list.
         let kept = Identity.claude(email: "c@example.com", organizationUuid: "org-c", refreshToken: nil).fileID
-        guard case .valid(let entry)? = await f.vault.entry(.claude, id: kept) else { Issue.record("outgoing login not kept"); return }
+        guard case .valid(let entry)? = await f.vault.entry(work, id: kept) else { Issue.record("outgoing login not kept"); return }
         #expect(entry.kept)
+        #expect(await f.vault.entry(.default(.claude), id: kept) == nil)
         #expect(f.box.violations.isEmpty)
     }
 
-    @Test func `REQ/F09-AC-9.c3 switching an account live in another context is refused, naming that context, and writes nothing`() async throws {
+    @Test func `REQ/F09-AC-9.c3 a switch is refused only when its saved login is the very one another context runs on, and writes nothing`() async throws {
         let f = try Fixture()
-        try await f.seedClaude("b")
-        let target = try await f.saveLive(.claude)
         let work = try await claudeContext(f, "a")
+        try await f.seedClaude("b")
+        // The default's own login in Work's list: a copy, its tokens the ones the default runs on.
+        let target = try await f.saveLive(.claude, in: work)
         let contexts = [ToolContext.default(.claude), work]
         let writesBefore = f.writes.count
         #expect(await f.switcher().switchTo(target, in: work, alongside: contexts) == .refused(
-            "b@example.com is already live in Default. To use it here too, sign in with Claude Code itself: one login copied into two contexts signs one of them out. Nothing was written."))
+            "b@example.com's saved login is the very one Default runs on, so one of them would be signed out at the next renewal. "
+                + "Sign in with Claude Code itself here to use it in both. Nothing was written."))
         #expect(f.writes.count == writesBefore)
         #expect(await liveKey(f, work) == "claude:a@example.com:org-a")
-        // Once the default moves on, the same switch goes through.
-        try await f.seedClaude("c")
+        // The default signs in to b on its own: the same account on its own tokens, so both contexts may run it.
+        #expect(await f.box.keychain.write(service: claudeService, account: "tester", value: utf8(claudeItem("b2"))) == .written)
         guard case .switched = await f.switcher().switchTo(target, in: work, alongside: contexts) else { Issue.record("switch refused"); return }
         #expect(await liveKey(f, work) == "claude:b@example.com:org-b")
+        #expect(await f.liveKey(.claude) == "claude:b@example.com:org-b")
     }
 
     @Test func `REQ/F09-AC-9.c7 a Claude context keeps its own switch journal, settled at launch`() async throws {
         let f = try Fixture()
-        try await f.seedClaude("b")
-        let target = try await f.saveLive(.claude)
         let work = try await claudeContext(f, "a")
+        try await f.seedClaude("b")
+        let target = try await f.saveLive(.claude, in: work)
         let suffix = contextService(work.path!).dropFirst(claudeService.count)
         let journal = f.box.supportRoot.appending(path: "vault/claude-switch\(suffix).json")
         try #"{"target":"\#(target.id)","keychainBefore":"\#(sha256Hex(utf8(claudeItem("a"))))","accountBefore":"\#(sha256Hex(utf8(claudeAccount("a"))))"}"#
@@ -799,10 +804,10 @@ fileprivate final class Fixture: @unchecked Sendable {
 
     @Test func `REQ/F09-AC-9.c2 a Codex context's switch writes its own auth.json and reports only the daemon its home recorded`() async throws {
         let f = try Fixture()
-        try f.seedCodex("b")
-        let target = try await f.saveLive(.codex)
-        try f.seedCodex("a")
         let work = ToolContext(tool: .codex, path: f.box.root.appending(path: "codex-work").path, name: "Work")
+        try f.seedCodex("b")
+        let target = try await f.saveLive(.codex, in: work)
+        try f.seedCodex("a")
         try f.box.write("codex-work/auth.json", codexAuth("c"))
         let lines = ["77 /opt/homebrew/bin/codex app-server --managed-daemon"]
         #expect(await f.switcher(lines: lines).switchTo(target, in: work) == .switched(notice: "Codex (Work) now signs in as b@example.com.", daemonRunning: false))
@@ -830,10 +835,10 @@ fileprivate final class Fixture: @unchecked Sendable {
 
     @Test func `REQ/F09-AC-9.c3 another context's unreadable login pauses the switch; a named context's notices carry its name`() async throws {
         let f = try Fixture()
-        try f.seedCodex("b")
-        let target = try await f.saveLive(.codex)
-        try f.seedCodex("a")
         let work = ToolContext(tool: .codex, path: f.box.root.appending(path: "codex-work").path, name: "Work")
+        try f.seedCodex("b")
+        let target = try await f.saveLive(.codex, in: work)
+        try f.seedCodex("a")
         try f.box.write("codex-work/auth.json", codexAuth("c"))
         // An unreadable config.toml makes the default context unknown.
         let broken = f.box.codexHome.appending(path: "config.toml")

@@ -67,9 +67,11 @@ public struct VaultError: Error, Equatable, CustomStringConvertible {
 
 /// A removed entry's raw file bytes, kept in memory for undo.
 public struct RemovedEntry: Sendable, Equatable {
-    public let tool: Tool
+    /// The context whose list it was removed from.
+    public let context: ToolContext
     public let id: String
     public let bytes: Data
+    public var tool: Tool { context.tool }
 }
 
 public struct VaultFaults: Sendable {
@@ -77,7 +79,9 @@ public struct VaultFaults: Sendable {
     public init(failAfterStagedWrite: Bool = false) { self.failAfterStagedWrite = failAfterStagedWrite }
 }
 
-/// Owner-only files under `supportRoot/vault/<tool>/<id>.json`, written through a staged file and `rename(2)`.
+/// Owner-only files under `supportRoot/vault/<tool>/<id>.json` for the default context and
+/// `vault/<tool>/<first 16 hex of sha256(path)>/<id>.json` for another, written through a staged file and `rename(2)`.
+/// Each context keeps its own list; a removed context's folder stays on disk, unread until it is added again.
 public actor Vault {
     public nonisolated let vaultURL: URL
     let now: @Sendable () -> Date
@@ -94,27 +98,22 @@ public actor Vault {
         var url = vaultURL
         try? url.setResourceValues(values)   // best effort: some volumes refuse it, and the vault must still open
         for tool in Tool.allCases {
-            let dir = vaultURL.appending(path: tool.rawValue, directoryHint: .isDirectory)
-            try Self.makeOwnerOnlyFolder(dir)
-            Self.settleStagedFiles(in: dir)
+            try Self.makeOwnerOnlyFolder(Self.folder(vaultURL, .default(tool)))
+            for dir in folders(tool) { Self.settleStagedFiles(in: dir, tool: tool) }
         }
     }
 
-    public func entries(_ tool: Tool) -> [VaultEntry] {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder(tool).path)) ?? []
-        return names.filter { $0.hasSuffix(".json") && !$0.dropLast(5).contains(".") }
-            .map { String($0.dropLast(5)) }
-            .sorted()
-            .compactMap { entry(tool, id: $0) }
+    /// The context's saved logins.
+    public func entries(_ context: ToolContext) -> [VaultEntry] { entries(in: folder(context), context.tool) }
+
+    public func entry(_ context: ToolContext, id: String) -> VaultEntry? {
+        guard let data = try? Data(contentsOf: file(context, id)) else { return nil }
+        return Self.validate(data, tool: context.tool, id: id)
     }
 
-    public func entry(_ tool: Tool, id: String) -> VaultEntry? {
-        guard let data = try? Data(contentsOf: file(tool, id)) else { return nil }
-        return Self.validate(data, tool: tool, id: id)
-    }
-
+    /// Saves the live login into `context`'s list (nil: its tool's default context).
     @discardableResult
-    public func save(_ state: LiveState, origin: VaultOrigin = .save, allowIncomplete: Bool = false) throws -> VaultEnvelope {
+    public func save(_ state: LiveState, in context: ToolContext? = nil, origin: VaultOrigin = .save, allowIncomplete: Bool = false) throws -> VaultEnvelope {
         let login: LiveLogin
         switch state {
         case .signedIn(let l): login = l
@@ -126,47 +125,58 @@ public actor Vault {
         guard login.identity.isComplete || allowIncomplete else { throw VaultError("incomplete identity") }
         let tool = login.identity.tool
         let id = login.identity.fileID
-        // A refresh token is one account's: the same one under another account means the tool's login and its account
+        let context = context ?? .default(tool)
+        guard context.tool == tool else { throw VaultError("saved under another tool") }
+        // A refresh token is one saved login's. The same one under another account means the tool's login and its account
         // record disagree (a switch cut short, a config copied from elsewhere), and saving would file one account's tokens
-        // under the other.
-        if let refresh = tokenSet(tool, bytes: login.bytes)?.refreshToken,
-           case .valid(let other)? = entries(tool).first(where: { entry in
-               guard case .valid(let e) = entry, e.identity.fileID != id, let bytes = e.payloadBytes else { return false }
-               return tokenSet(tool, bytes: bytes)?.refreshToken == refresh
-           }) {
-            throw VaultError("this login's tokens are already saved for \(other.label), so its account record looks wrong", sharedWith: other.label)
+        // under the other. In another context's list it means a copied folder: the two would spend each other's token.
+        if let refresh = tokenSet(tool, bytes: login.bytes)?.refreshToken {
+            let home = folder(context).path
+            for dir in folders(tool) {
+                for case .valid(let e) in entries(in: dir, tool) where e.payloadBytes.flatMap({ tokenSet(tool, bytes: $0) })?.refreshToken == refresh {
+                    if dir.path != home {
+                        throw VaultError("this exact login is already saved in another context, and one login in two contexts signs one of them out",
+                                         sharedWith: e.label)
+                    }
+                    if e.identity.fileID != id {
+                        throw VaultError("this login's tokens are already saved for \(e.label), so its account record looks wrong", sharedWith: e.label)
+                    }
+                }
+            }
         }
-        let existing = try existingEnvelope(tool, id)
+        let existing = try existingEnvelope(context, id)
         let envelope = VaultEnvelope(
             v: 1, tool: tool, identity: login.identity, identityKey: login.identity.key, label: login.label, plan: login.plan,
             claudeAccount: login.claudeAccount.map { String(decoding: $0, as: UTF8.self) }, accountID: login.accountID,
             payload: login.bytes.base64EncodedString(), generation: (existing?.generation ?? 0) + 1, capturedAt: now(),
             origin: origin, kept: Self.kept(origin, existing), clientId: login.clientID)
-        try stagedWrite(Self.encode(envelope), to: file(tool, id))
+        try Self.makeOwnerOnlyFolder(folder(context))
+        try stagedWrite(Self.encode(envelope), to: file(context, id))
         return envelope
     }
 
     @discardableResult
-    public func replacePayload(_ tool: Tool, id: String, bytes: Data, origin: VaultOrigin) throws -> VaultEnvelope {
-        guard let existing = try existingEnvelope(tool, id) else { throw VaultError("no saved login with that id") }
+    public func replacePayload(_ context: ToolContext, id: String, bytes: Data, origin: VaultOrigin) throws -> VaultEnvelope {
+        guard let existing = try existingEnvelope(context, id) else { throw VaultError("no saved login with that id") }
         let envelope = existing.with(payload: bytes.base64EncodedString(), generation: existing.generation + 1,
                                      capturedAt: now(), origin: origin, kept: Self.kept(origin, existing))
-        try stagedWrite(Self.encode(envelope), to: file(tool, id))
+        try stagedWrite(Self.encode(envelope), to: file(context, id))
         return envelope
     }
 
-    public func remove(_ tool: Tool, id: String) throws -> RemovedEntry {
-        let target = file(tool, id)
+    public func remove(_ context: ToolContext, id: String) throws -> RemovedEntry {
+        let target = file(context, id)
         guard let bytes = try? Data(contentsOf: target) else { throw VaultError("no saved login with that id") }
         try FileManager.default.removeItem(at: target)
         try? FileManager.default.removeItem(at: Self.prev(target))
-        return RemovedEntry(tool: tool, id: id, bytes: bytes)
+        return RemovedEntry(context: context, id: id, bytes: bytes)
     }
 
     /// Writes the removed bytes back unchanged; false (nothing written) when an entry with that id exists.
     public func restore(_ removed: RemovedEntry) throws -> Bool {
-        let target = file(removed.tool, removed.id)
+        let target = file(removed.context, removed.id)
         if FileManager.default.fileExists(atPath: target.path) { return false }
+        try Self.makeOwnerOnlyFolder(folder(removed.context))
         try stagedWrite(removed.bytes, to: target)
         return true
     }
@@ -184,13 +194,38 @@ public actor Vault {
 
     // MARK: - Files
 
-    private func folder(_ tool: Tool) -> URL { vaultURL.appending(path: tool.rawValue, directoryHint: .isDirectory) }
-    private func file(_ tool: Tool, _ id: String) -> URL { folder(tool).appending(path: "\(id).json") }
+    private static func folder(_ vaultURL: URL, _ context: ToolContext) -> URL {
+        let root = vaultURL.appending(path: context.tool.rawValue, directoryHint: .isDirectory)
+        guard let path = context.path else { return root }
+        return root.appending(path: String(sha256Hex(Data(path.utf8)).prefix(16)), directoryHint: .isDirectory)
+    }
+
+    private nonisolated func folder(_ context: ToolContext) -> URL { Self.folder(vaultURL, context) }
+    private func file(_ context: ToolContext, _ id: String) -> URL { folder(context).appending(path: "\(id).json") }
     private static func prev(_ target: URL) -> URL { target.appendingPathExtension("prev") }
 
+    /// The default context's folder, then every other context's on disk, removed contexts' included.
+    private nonisolated func folders(_ tool: Tool) -> [URL] {
+        let root = folder(.default(tool))
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        return [root] + names.sorted().compactMap { name in
+            var isDirectory: ObjCBool = false
+            let url = root.appending(path: name, directoryHint: .isDirectory)
+            return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue ? url : nil
+        }
+    }
+
+    private func entries(in dir: URL, _ tool: Tool) -> [VaultEntry] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        return names.filter { $0.hasSuffix(".json") && !$0.dropLast(5).contains(".") }
+            .map { String($0.dropLast(5)) }
+            .sorted()
+            .compactMap { id in (try? Data(contentsOf: dir.appending(path: "\(id).json"))).map { Self.validate($0, tool: tool, id: id) } }
+    }
+
     /// The current valid envelope, nil when there is none; throws for an unreadable one, which is never overwritten.
-    private func existingEnvelope(_ tool: Tool, _ id: String) throws -> VaultEnvelope? {
-        switch entry(tool, id: id) {
+    private func existingEnvelope(_ context: ToolContext, _ id: String) throws -> VaultEnvelope? {
+        switch entry(context, id: id) {
         case nil: nil
         case .valid(let e): e
         case .unreadable: throw VaultError("unreadable vault entry")
@@ -234,7 +269,7 @@ public actor Vault {
 
     /// A staged file left by an interrupted write is promoted when it is a newer generation than its target (or the
     /// target is gone); any other staged file is deleted.
-    private static func settleStagedFiles(in dir: URL) {
+    private static func settleStagedFiles(in dir: URL, tool: Tool) {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
         for name in names where name.hasSuffix(".tmp") {
             let staged = dir.appending(path: name)
@@ -242,7 +277,7 @@ public actor Vault {
             let id = String(name[..<range.lowerBound])
             let target = dir.appending(path: "\(id).json")
             guard let data = try? Data(contentsOf: staged),
-                  case .valid(let candidate) = validate(data, tool: Tool(rawValue: dir.lastPathComponent) ?? .claude, id: id) else {
+                  case .valid(let candidate) = validate(data, tool: tool, id: id) else {
                 unlink(staged.path); continue
             }
             let current = (try? Data(contentsOf: target)).flatMap { try? decoder.decode(VaultEnvelope.self, from: $0) }

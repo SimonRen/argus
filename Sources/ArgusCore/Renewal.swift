@@ -24,8 +24,9 @@ public actor Renewer {
     private var blocked: Set<String> = []
     /// Access tokens minted for agy's live login, per account, with the refresh token they came from.
     private var minted: [AccountKey: (refresh: String, token: String, expiry: Date)] = [:]
-    /// Renewed logins the vault couldn't take: their old refresh token is spent, so they are saved before anything else.
-    private var unsaved: [AccountKey: Data] = [:]
+    /// Renewed logins the vault couldn't take, per context's list: their old refresh token is spent, so they are saved
+    /// before anything else.
+    private var unsaved: [ToolContext: [String: Data]] = [:]
 
     static let claudeURL = URL(string: "https://platform.claude.com/v1/oauth/token")!
     static let claudeClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
@@ -55,22 +56,24 @@ public actor Renewer {
         return access
     }
 
-    /// Runs in the tool's exclusive section; once sent, the request completes and its result is persisted even if the
-    /// caller goes away. `contexts` are the tool's contexts whose live logins it must not touch; none: the default only.
-    public func renew(_ key: AccountKey, trigger: RenewalTrigger, vault: Vault, contexts: [ToolContext] = []) async -> RenewalOutcome {
+    /// Renews the account's saved login in `list` (nil: the default context's). Runs in the tool's exclusive section;
+    /// once sent, the request completes and its result is persisted even if the caller goes away. `contexts` are the
+    /// tool's contexts whose live logins it must not touch; none: the default only.
+    public func renew(_ key: AccountKey, in list: ToolContext? = nil, trigger: RenewalTrigger, vault: Vault, contexts: [ToolContext] = []) async -> RenewalOutcome {
+        let list = list ?? .default(key.tool)
         do {
-            return try await vault.exclusive(key.tool) { await self.renewInSection(key, trigger, vault, contexts) }
+            return try await vault.exclusive(key.tool) { await self.renewInSection(key, list, trigger, vault, contexts) }
         } catch {
             return .transient("interrupted")
         }
     }
 
-    private func renewInSection(_ key: AccountKey, _ trigger: RenewalTrigger, _ vault: Vault, _ contexts: [ToolContext]) async -> RenewalOutcome {
-        if let pending = unsaved[key] {
-            guard (try? await vault.replacePayload(key.tool, id: key.id, bytes: pending, origin: .renewal)) != nil else {
+    private func renewInSection(_ key: AccountKey, _ list: ToolContext, _ trigger: RenewalTrigger, _ vault: Vault, _ contexts: [ToolContext]) async -> RenewalOutcome {
+        if let pending = unsaved[list]?[key.id] {
+            guard (try? await vault.replacePayload(list, id: key.id, bytes: pending, origin: .renewal)) != nil else {
                 return .transient("couldn't save the renewed login")
             }
-            unsaved[key] = nil
+            unsaved[list]?[key.id] = nil
             return .renewed
         }
         guard let adapter = tools[key.tool] else { return .skipped("no live reader") }
@@ -86,7 +89,7 @@ public actor Renewer {
             default: break
             }
         }
-        guard case .valid(let envelope)? = await vault.entry(key.tool, id: key.id) else { return .skipped("entry gone or unreadable") }
+        guard case .valid(let envelope)? = await vault.entry(list, id: key.id) else { return .skipped("entry gone or unreadable") }
         guard envelope.identity.isComplete, let payload = envelope.payloadBytes else { return .skipped("entry incomplete") }
         let tokens = tokenSet(key.tool, bytes: payload)
         // The tool may be running on these very tokens under another account's name; renewing would spend its token.
@@ -108,10 +111,10 @@ public actor Renewer {
         switch result {
         case .success(let bytes):
             do {
-                try await vault.replacePayload(key.tool, id: key.id, bytes: bytes, origin: .renewal)
+                try await vault.replacePayload(list, id: key.id, bytes: bytes, origin: .renewal)
                 return .renewed
             } catch {
-                unsaved[key] = bytes
+                unsaved[list, default: [:]][key.id] = bytes
                 return .transient("couldn't save the renewed login")
             }
         case .failure(.refused): return .refused

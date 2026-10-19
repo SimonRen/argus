@@ -68,7 +68,7 @@ import ArgusCore
             #expect(await cmds.save(.default(.claude)) == .refused(reason))
             #expect(cmds.notice == reason)
             #expect(cmds.noticeIsProblem)
-            #expect(await rig.vault.entries(.claude).isEmpty)
+            #expect(await rig.vault.entries(.default(.claude)).isEmpty)
         }
     }
 
@@ -86,7 +86,7 @@ import ArgusCore
         #expect(outcome == .switched(notice: "Codex now signs in as b@example.com.", daemonRunning: false))
         #expect(cmds.notice == "Codex now signs in as b@example.com.")
         #expect(rig.tools[.codex]!.reads >= 2)   // read again, then refreshed
-        #expect(rig.state.entries[.codex]?.count == 2)
+        #expect(rig.state.saved(.default(.codex)).count == 2)
         cmds.dismissNotice()
         #expect(cmds.notice == nil)
         #expect(!cmds.noticeIsProblem)
