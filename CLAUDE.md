@@ -40,8 +40,8 @@ Key mechanisms, each spread across several files:
   - Codex: `auth.json` in `CODEX_HOME`, written through symlinks. A running Codex app-server daemon is then restarted (`CodexDaemon`). Codex logins stored in the Keychain are shown but never switched.
   - agy: its Keychain item and its token file.
 - **Contexts** (ADR-0004): a `ToolContext` is the exact `CLAUDE_CONFIG_DIR` or `CODEX_HOME` value (nil is the default). `ToolEnvironment.scoped(to:)` and `ToolAdapter.scoped(to:)` point the readers at one. Claude's Keychain item becomes `Claude Code-credentials-<first 8 hex of sha256(path)>`, so `/x` and `/x/` are different logins. `AppState.live` is kept per tool, per context. Each context is its own popover card and manager page, listing its live account and the accounts live nowhere. Accounts stay global, and a switch is refused while its account is live in another context. agy has none.
-- **Polling and renewal**: `Poller` fetches a batch every 3, 5 or 10 minutes.
-  - Requests go out one at a time per vendor, a 429 puts that account into backoff, and minimum gaps persist across restarts in `readings.json`.
+- **Polling and renewal**: `Poller` fetches a batch every 3, 5 or 10 minutes, each sleep a random ±10% of it.
+  - Requests go out one at a time per vendor, a random 3–10 s apart, a 429 puts that account into backoff, and minimum gaps persist across restarts in `readings.json`.
   - Opening the popover reads and sends nothing. Live logins are read by interval batches and the refresh buttons, and `rereadLive()` (local stores only, no network) runs after a switch.
   - `Renewer` (ADR-0002) renews only saved accounts that aren't live; each tool keeps renewing its own live login.
   - The OAuth client IDs live in `OAuthClients.swift` and `Renewal.swift`.

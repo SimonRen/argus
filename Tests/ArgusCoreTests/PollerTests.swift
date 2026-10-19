@@ -300,7 +300,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
 
     @Test func `usage requests to one vendor go one at a time, spaced apart; other vendors are not held`() async throws {
         let a = testLogin(.claude, "a"), b = testLogin(.claude, "b"), c = testLogin(.claude, "c"), x = testLogin(.codex, "x")
-        let rig = try PollerRig(live: [.claude: [.signedIn(a)], .codex: [.signedIn(x)]], spacing: 2)
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)], .codex: [.signedIn(x)]], spacing: 2...2)
         try await rig.save(b)
         try await rig.save(c)
         await rig.poller.runBatch()
@@ -312,7 +312,7 @@ fileprivate final class Concurrency: @unchecked Sendable {
     @Test func `two refreshes of one vendor's accounts never overlap`() async throws {
         let gate = TestGate()
         let a = testLogin(.claude, "a"), b = testLogin(.claude, "b")
-        let rig = try PollerRig(live: [.claude: [.signedIn(a)]], spacing: 2) { request in
+        let rig = try PollerRig(live: [.claude: [.signedIn(a)]], spacing: 2...2) { request in
             if requestTag(request) == "a" { await gate.wait() }
             return okReply(request)
         }
@@ -329,6 +329,36 @@ fileprivate final class Concurrency: @unchecked Sendable {
         _ = await second.value
         #expect(rig.tags == ["a", "b"])
         #expect(rig.pacer.durations == [.seconds(2)])
+    }
+
+    @Test func `requests to one vendor go a random 3 to 10 s apart, and each interval sleep is the interval ± 10%`() async throws {
+        func run(_ pick: @escaping @Sendable (ClosedRange<Double>) -> Double) async throws -> (gaps: [Duration], sleeps: [Duration]) {
+            let rig = try PollerRig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]], spacing: 3...10, pick: pick)
+            try await rig.save(testLogin(.claude, "b"))
+            try await rig.save(testLogin(.claude, "c"))
+            rig.poller.start()
+            #expect(await eventually { rig.sleeper.durations.count == 1 })
+            rig.poller.stop()
+            return (rig.pacer.durations, rig.sleeper.durations)
+        }
+        let low = try await run { $0.lowerBound }, high = try await run { $0.upperBound }
+        #expect(low.gaps == [.seconds(3), .seconds(3)] && low.sleeps == [.seconds(270)])
+        #expect(high.gaps == [.seconds(10), .seconds(10)] && high.sleeps == [.seconds(330)])
+    }
+
+    @Test func `the shortest jittered interval still fetches an account at its minimum gap`() async throws {
+        let rig = try PollerRig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]], pick: { $0.lowerBound })
+        let cmds = AccountCommands(state: rig.state, poller: rig.poller, vault: rig.vault, tools: Tool.allCases.map { rig.tools[$0]! },
+                                   switcher: Switcher(env: rig.box.env, vault: rig.vault, processes: ProcessListing { [] }))
+        cmds.setInterval(3)
+        rig.poller.start()
+        #expect(await eventually { rig.sleeper.durations.count == 1 })
+        rig.poller.stop()
+        // 3 min less 10% is under Claude's 180 s gap, but the batch's allowance matches the jitter.
+        #expect(rig.sleeper.durations == [.seconds(162)])
+        rig.clock.advance(162)
+        await rig.poller.runBatch()
+        #expect(rig.count("a") == 2)
     }
 
     // MARK: F04-AC-4.c19

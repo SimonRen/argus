@@ -34,9 +34,13 @@ public struct TaskSleeper: Sleeper {
     /// Per account: the last reading, backoff and attempt, kept across launches so a relaunch neither shows dashes
     /// nor hits a blocked account again; nil keeps them in memory only.
     let readingsFile: URL?
-    /// Usage requests to one vendor go one at a time, at least this far apart (from the previous one's end).
-    let spacing: TimeInterval
+    /// Usage requests to one vendor go one at a time, a random time in this range apart (from the previous one's end).
+    let spacing: ClosedRange<TimeInterval>
     let pacer: any Sleeper
+    /// Picks a value in a range: each request gap and each interval's jitter. Tests pass a fixed pick.
+    let random: @Sendable (ClosedRange<Double>) -> Double
+    /// Each interval sleep is the chosen interval ± this share, so batches keep no fixed beat.
+    static let intervalJitter = 0.1
 
     private var loop: Task<Void, Never>?
     private var batch: Task<Void, Never>?
@@ -58,7 +62,8 @@ public struct TaskSleeper: Sleeper {
 
     public init(state: AppState, tools: [any ToolAdapter], vault: Vault, fetcher: AllowanceFetcher,
                 sleeper: any Sleeper, now: @escaping @Sendable () -> Date, renewer: Renewer? = nil, readingsFile: URL? = nil,
-                spacing: TimeInterval = 0, pacer: any Sleeper = TaskSleeper()) {
+                spacing: ClosedRange<TimeInterval> = 0...0, pacer: any Sleeper = TaskSleeper(),
+                random: @escaping @Sendable (ClosedRange<Double>) -> Double = { Double.random(in: $0) }) {
         self.state = state
         self.tools = Dictionary(tools.map { ($0.tool, $0) }, uniquingKeysWith: { first, _ in first })
         self.vault = vault
@@ -69,6 +74,7 @@ public struct TaskSleeper: Sleeper {
         self.readingsFile = readingsFile
         self.spacing = spacing
         self.pacer = pacer
+        self.random = random
         loadReadings()
     }
 
@@ -126,7 +132,8 @@ public struct TaskSleeper: Sleeper {
             if batchFirst { await self?.runBatch() }
             while !Task.isCancelled {
                 guard let self else { return }
-                do { try await sleeper.sleep(for: .seconds(60 * state.intervalMinutes)) } catch { return }
+                let interval = TimeInterval(60 * state.intervalMinutes) * random(1 - Self.intervalJitter...1 + Self.intervalJitter)
+                do { try await sleeper.sleep(for: .seconds(interval)) } catch { return }
                 await runBatch()
             }
         }
@@ -378,12 +385,12 @@ public struct TaskSleeper: Sleeper {
         saveReadings()
     }
 
-    /// Runs `send` after every earlier usage request to `tool` has finished and `spacing` has passed since the last.
+    /// Runs `send` after every earlier usage request to `tool` has finished and a gap drawn from `spacing` has passed since the last.
     private func paced(_ tool: Tool, _ send: @escaping @MainActor () async -> FetchResult) async -> FetchResult {
-        let previous = vendorTail[tool]
+        let previous = vendorTail[tool], gap = random(spacing)
         let request = Task { () -> FetchResult in
             await previous?.value
-            if let last = lastSent[tool], case let wait = spacing - now().timeIntervalSince(last), wait > 0 {
+            if let last = lastSent[tool], case let wait = gap - now().timeIntervalSince(last), wait > 0 {
                 try? await pacer.sleep(for: .seconds(wait))
             }
             let result = await send()
@@ -401,13 +408,14 @@ public struct TaskSleeper: Sleeper {
         return true
     }
 
-    /// Nil when `key` may be fetched now. A batch may come up to 10% early, so its own timing drift never skips one.
+    /// Nil when `key` may be fetched now. A batch may come as early as the interval's jitter allows: the interval sleep
+    /// starts once the whole batch is done, so an account's next batch request is never sooner than that.
     private func deferral(_ key: AccountKey, batch: Bool = false) -> RefreshDeferral? {
         let now = now()
         if let until = state.rateLimitedUntil[key], now < until { return RefreshDeferral(until: until, rateLimitedBy: key.tool) }
         let gap = minimumGap(key)
         guard let last = [lastAttempt[key], state.status[key]?.reading?.fetchedAt].compactMap({ $0 }).max(),
-              now.timeIntervalSince(last) < gap * (batch ? 0.9 : 1) else { return nil }
+              now.timeIntervalSince(last) < gap * (batch ? 1 - Self.intervalJitter : 1) else { return nil }
         return RefreshDeferral(until: last.addingTimeInterval(gap), rateLimitedBy: nil)
     }
 

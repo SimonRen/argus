@@ -6,6 +6,10 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+### Changed
+
+- Polling no longer runs like clockwork. Each wait between refreshes varies by up to 10% either way, and requests to one service go 3 to 10 seconds apart at random instead of every 2 seconds.
+
 ## [0.4.0] - 2026-10-19
 
 ### Changed

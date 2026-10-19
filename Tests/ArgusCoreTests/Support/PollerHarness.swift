@@ -155,8 +155,10 @@ func eventually(_ condition: @Sendable () -> Bool) async -> Bool {
 
     let pacer: ClockSleeper
 
-    init(live: [Tool: [LiveState]] = [:], renewing: Bool = false, persistReadings: Bool = false, spacing: TimeInterval = 0,
-         reply: @escaping @Sendable (TestHTTPStub.Request) async -> TestHTTPStub.Reply = okReply) throws {
+    /// `pick` stands for the random draws; the middle of each range by default, so the interval sleeps exactly.
+    init(live: [Tool: [LiveState]] = [:], renewing: Bool = false, persistReadings: Bool = false, spacing: ClosedRange<TimeInterval> = 0...0,
+         reply: @escaping @Sendable (TestHTTPStub.Request) async -> TestHTTPStub.Reply = okReply,
+         pick: @escaping @Sendable (ClosedRange<Double>) -> Double = { ($0.lowerBound + $0.upperBound) / 2 }) throws {
         box = try TestSandbox(security: ScriptedSecurity([.timedOut]))
         vault = try Vault(supportRoot: box.supportRoot)
         stub = TestHTTPStub(reply)
@@ -170,7 +172,8 @@ func eventually(_ condition: @Sendable () -> Bool) async -> Bool {
         let fetcher = AllowanceFetcher(http: http, version: "0.1.0", now: clock.closure)
         pacer = ClockSleeper(clock)
         poller = Poller(state: state, tools: adapters, vault: vault, fetcher: fetcher, sleeper: sleeper, now: clock.closure, renewer: renewer,
-                        readingsFile: persistReadings ? box.supportRoot.appending(path: "readings.json") : nil, spacing: spacing, pacer: pacer)
+                        readingsFile: persistReadings ? box.supportRoot.appending(path: "readings.json") : nil, spacing: spacing, pacer: pacer,
+                        random: pick)
     }
 
     @discardableResult
