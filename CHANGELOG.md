@@ -6,6 +6,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-19
+
 ### Changed
 
 - Each Claude Code and Codex context is now its own section: a card in the popover and a page in the manager's sidebar, named after the context. A section lists its live login and the saved accounts not live in another context, and Save and Switch act on that context. The context picker is gone.
