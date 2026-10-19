@@ -10,7 +10,7 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ### Changed
 
-- Context names on the popover cards and in the manager are shown in capitals.
+- Context names on the popover cards, in the manager and in the menubar are shown in capitals.
 
 ## [0.5.0] - 2026-10-19
 
