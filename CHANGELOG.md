@@ -6,6 +6,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-19
+
 ### Changed
 
 - Each Claude Code and Codex context now keeps its own saved accounts. Save, Switch and Remove act on that context only, so removing an account from one context leaves the others alone. Your existing saved accounts belong to the default context; save another context's logins from its own page. An account saved in several contexts is still checked once and shows the same usage everywhere.
