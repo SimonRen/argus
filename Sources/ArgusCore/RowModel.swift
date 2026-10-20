@@ -88,8 +88,8 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
     /// nil → Switch enabled (live rows show the Live pill instead).
     public let switchDisabledReason: String?
     public let refreshEnabled: Bool
-    /// The switch to this account or its removal under way: what its button says meanwhile.
-    public let activity: String?
+    /// The context's switch to this account (under way or just ended) or its removal: what its button shows meanwhile.
+    public let activity: PendingAction?
     /// A saved account, and nothing under way in its context.
     public let removeEnabled: Bool
 
@@ -155,7 +155,7 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
         }
         refreshEnabled = account.isLive || blocked == nil
         activity = switch pending {
-        case .switching(account.key)?, .removing(account.key)?: pending?.text
+        case .switching(account.key)?, .switched(account.key, _)?, .removing(account.key)?: pending
         default: nil
         }
         removeEnabled = account.isSaved && pending == nil

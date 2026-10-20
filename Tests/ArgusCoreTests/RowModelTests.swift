@@ -118,10 +118,16 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
         #expect(idle.rows.map(\.switchDisabledReason) == [nil, nil, "Needs sign-in"])
         let switching = build(.switching(bob))
         #expect(switching.pending == .switching(bob))
-        #expect(switching.rows.map(\.activity) == [nil, "Switching…", nil])
+        #expect(switching.rows.map(\.activity) == [nil, .switching(bob), nil])
         #expect(switching.rows.map(\.switchDisabledReason) == ["Switching…", "Switching…", "Needs sign-in"])
         #expect(switching.rows.allSatisfy { !$0.removeEnabled })
-        #expect(build(.removing(bob)).rows.map(\.activity) == [nil, "Removing…", nil])
+        // However it ended, the switch stays on its row and the other Switch buttons stay held until it settles.
+        for (ok, text) in [(true, "Switched"), (false, "Not switched")] {
+            let ended = build(.switched(bob, ok: ok))
+            #expect(ended.rows.map(\.activity) == [nil, .switched(bob, ok: ok), nil])
+            #expect(ended.rows.map(\.switchDisabledReason) == [text, text, "Needs sign-in"])
+        }
+        #expect(build(.removing(bob)).rows.map(\.activity?.text) == [nil, "Removing…", nil])
         #expect(build(.saving).rows.allSatisfy { $0.activity == nil && !$0.removeEnabled })
     }
 

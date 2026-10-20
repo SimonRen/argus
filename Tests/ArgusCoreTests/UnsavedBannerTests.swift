@@ -2,9 +2,10 @@ import Foundation
 import Testing
 import ArgusCore
 
-@MainActor fileprivate func commands(_ rig: PollerRig) -> AccountCommands {
+@MainActor fileprivate func commands(_ rig: PollerRig, settleTime: Duration = .seconds(2)) -> AccountCommands {
     let switcher = Switcher(env: rig.box.env, vault: rig.vault, processes: ProcessListing { [] })
-    return AccountCommands(state: rig.state, poller: rig.poller, vault: rig.vault, tools: Tool.allCases.map { rig.tools[$0]! }, switcher: switcher)
+    return AccountCommands(state: rig.state, poller: rig.poller, vault: rig.vault, tools: Tool.allCases.map { rig.tools[$0]! }, switcher: switcher,
+                           settleTime: settleTime)
 }
 
 @MainActor fileprivate func banner(_ rig: PollerRig, _ cmds: AccountCommands, _ tool: Tool) -> String? {
@@ -122,11 +123,26 @@ fileprivate func holdSection(_ vault: Vault, _ tool: Tool) async -> (gate: TestG
             waited += 1
         }
         #expect(cmds.notice == "Codex now signs in as b@example.com.")
-        #expect(cmds.pending.isEmpty)
+        #expect(cmds.pending == [.default(.codex): .switched(key, ok: true)])
         // Only the live refresh after the notice waits for agy's section.
         await agy.gate.release()
         #expect(await switching.value == .switched(notice: "Codex now signs in as b@example.com.", daemonRunning: false))
         try await agy.task.value
+    }
+
+    // A switch that went through is held as `.switched(_, ok: true)` in the notice test above.
+    @Test func `a refused switch also holds its context for the settle time, then frees it`() async throws {
+        let rig = try PollerRig()
+        let cmds = commands(rig, settleTime: .milliseconds(200))
+        let context = ToolContext.default(.codex), gone = AccountKey(tool: .codex, id: "gone")
+        #expect(await cmds.switchTo(gone, in: context) == .refused("That saved account is gone."))
+        #expect(cmds.pending[context] == .switched(gone, ok: false))
+        var waited = 0
+        while cmds.pending[context] != nil, waited < 500 {
+            try await Task.sleep(for: .milliseconds(10))
+            waited += 1
+        }
+        #expect(cmds.pending[context] == nil)
     }
 
     @Test func `a switch through the commands sets the notice and refreshes the live accounts`() async throws {

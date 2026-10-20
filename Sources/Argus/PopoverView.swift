@@ -241,21 +241,24 @@ struct RowView: View {
                     ForEach(Array(row.cells(columns).enumerated()), id: \.offset) { CellView(cell: $0.element, theme: t) }
                 }
                 HStack(spacing: 4) {
-                    if !row.isLive {
+                    // A finished switch keeps its slot on what is now the live row while it shows how it went.
+                    if !row.isLive || row.activity != nil {
                         Button { actions.switchTo(row.id) } label: {
                             Group {
-                                if row.activity != nil {
-                                    ProgressView().controlSize(.mini)
-                                } else {
-                                    Image(systemName: "arrow.left.arrow.right").font(.system(size: 10, weight: .bold)).foregroundStyle(t.text)
+                                switch row.activity {
+                                case .switched(_, ok: true)?: Image(systemName: "checkmark").foregroundStyle(t.liveText)
+                                case .switched(_, ok: false)?: Image(systemName: "exclamationmark.triangle").foregroundStyle(t.warnText)
+                                case .some: ProgressView().controlSize(.mini)
+                                case nil: Image(systemName: "arrow.left.arrow.right").foregroundStyle(t.text)
                                 }
                             }
+                            .font(.system(size: 10, weight: .bold))
                             .frame(width: 24, height: 24).background(t.btn, in: RoundedRectangle(cornerRadius: 7))
                         }
                         .buttonStyle(HoverStyle(filled: AnyShape(RoundedRectangle(cornerRadius: 7))))
                         .disabled(row.switchDisabledReason != nil).opacity(row.switchDisabledReason != nil && row.activity == nil ? 0.4 : 1)
-                        .help(row.switchDisabledReason ?? "Switch \(tool.displayName) to \(row.email)")
-                        .accessibilityLabel("Switch \(tool.displayName) to \(row.email)")
+                        .help(row.activity?.text ?? row.switchDisabledReason ?? "Switch \(tool.displayName) to \(row.email)")
+                        .accessibilityLabel("Switch \(tool.displayName) to \(row.email)").accessibilityValue(row.activity?.text ?? "")
                     }
                     RefreshButton(action: { await actions.refresh(row.id) }, active: row.isFetching) { angle in
                         Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .bold)).rotationEffect(angle).frame(width: 22, height: 22)
@@ -269,7 +272,11 @@ struct RowView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle").font(.system(size: 11, weight: .semibold))
                     Text(suggestion.text).font(.system(size: 11.5)).frame(maxWidth: .infinity, alignment: .leading)
-                    PillButton(title: suggested?.activity ?? "Switch", fill: t.ok, disabled: suggested?.switchDisabledReason != nil) { actions.switchTo(suggestion.target) }
+                    if let activity = suggested?.activity {
+                        ActivityPill(activity: activity, theme: t)
+                    } else {
+                        PillButton(title: "Switch", fill: t.ok, disabled: suggested?.switchDisabledReason != nil) { actions.switchTo(suggestion.target) }
+                    }
                 }
                 .foregroundStyle(t.warnText).padding(EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 6))
                 .background(t.warnBg, in: RoundedRectangle(cornerRadius: 9))
@@ -433,6 +440,29 @@ struct BadgeView: View {
 struct TightLabel: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 3) { configuration.icon; configuration.title }
+    }
+}
+
+/// A switch or remove under way on a row, or how its switch just ended: shown in place of its button, not pressable.
+struct ActivityPill: View {
+    let activity: PendingAction
+    let theme: Theme
+
+    var body: some View {
+        let (icon, fill, text): (String?, Color, Color) = switch activity {
+        case .switched(_, ok: true): ("checkmark", theme.liveBg, theme.liveText)
+        case .switched(_, ok: false): ("exclamationmark.triangle", theme.warnBg, theme.warnText)
+        default: (nil, theme.chip, theme.text)
+        }
+        HStack(spacing: 4) {
+            if let icon {
+                Image(systemName: icon).font(.system(size: 9.5, weight: .bold))
+            } else {
+                ProgressView().controlSize(.mini)
+            }
+            Text(activity.text).font(.system(size: 11.5, weight: .semibold))
+        }
+        .foregroundStyle(text).padding(.horizontal, 9).frame(height: 22).background(fill, in: Capsule())
     }
 }
 

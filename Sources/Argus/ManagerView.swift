@@ -418,7 +418,7 @@ private struct ManagerRowView: View {
             HStack(spacing: 4) {
                 Spacer(minLength: 0)
                 if let activity = row.activity {
-                    PillButton(title: activity, fill: t.chip, foreground: t.text, disabled: true) {}
+                    ActivityPill(activity: activity, theme: t)
                 } else if armed {
                     PillButton(title: "Remove", fill: t.barLow) {
                         armed = false
