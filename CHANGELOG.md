@@ -6,6 +6,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-20
+
 ### Fixed
 
 - Save, Switch, Remove and Undo now show that they're working. The button you pressed reads "Saving…", "Switching…" or "Removing…" (in the popover the switch arrow spins), and that context's other account buttons wait until it's done. Adding or removing a context in the manager waits the same way.
