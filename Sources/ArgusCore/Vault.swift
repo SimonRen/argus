@@ -316,9 +316,9 @@ public actor Vault {
     }
 }
 
-/// Writes `data` to a new 0600 file beside `target` (`<name>.<random>.tmp`, `O_EXCL`) and flushes it to disk with
-/// `F_FULLFSYNC`; nil (nothing left behind) when any step fails.
-func writeStagedFile(_ data: Data, besides target: URL) -> URL? {
+/// Writes `data` to a new 0600 file beside `target` (`<name>.<random>.tmp`, `O_EXCL`) and, when `flush`, flushes it to disk
+/// with `F_FULLFSYNC`; nil (nothing left behind) when any step fails.
+func writeStagedFile(_ data: Data, besides target: URL, flush: Bool = true) -> URL? {
     let staged = target.deletingLastPathComponent()
         .appending(path: "\(target.lastPathComponent).\(UUID().uuidString.lowercased()).tmp")
     let fd = open(staged.path, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0o600)
@@ -333,15 +333,15 @@ func writeStagedFile(_ data: Data, besides target: URL) -> URL? {
         }
         return true
     }
-    ok = ok && fcntl(fd, F_FULLFSYNC) == 0
+    ok = ok && (!flush || fcntl(fd, F_FULLFSYNC) == 0)
     close(fd)
     if !ok { unlink(staged.path) }
     return ok ? staged : nil
 }
 
-/// Replaces `target` with `data` atomically: staged 0600 file, fsync, `rename(2)`.
-func writeFileAtomically(_ data: Data, to target: URL) -> Bool {
-    guard let staged = writeStagedFile(data, besides: target) else { return false }
+/// Replaces `target` with `data` atomically: staged 0600 file, fsync (when `flush`), `rename(2)`.
+func writeFileAtomically(_ data: Data, to target: URL, flush: Bool = true) -> Bool {
+    guard let staged = writeStagedFile(data, besides: target, flush: flush) else { return false }
     guard rename(staged.path, target.path) == 0 else {
         unlink(staged.path)
         return false

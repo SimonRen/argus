@@ -60,6 +60,9 @@ struct ManagerView: View {
     @State private var newContextName = ""
     @State private var newContextPath = ""
     @State private var contextError: String?
+    /// An Add or a context's Remove under way: its button waits meanwhile.
+    @State private var addingContext = false
+    @State private var removingContext: ToolContext?
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -116,8 +119,8 @@ struct ManagerView: View {
         ToolbarItem(placement: .primaryAction) {
             HStack(spacing: 8) {
                 Text("Launch at login").font(.system(size: 12)).foregroundStyle(t.sub)
-                Toggle("Launch at login", isOn: Binding(get: { loginItem.isOn }, set: { loginItem.set($0) }))
-                    .toggleStyle(.switch).labelsHidden().controlSize(.mini)
+                Toggle("Launch at login", isOn: Binding(get: { loginItem.isOn }, set: { on in Task { await loginItem.set(on) } }))
+                    .toggleStyle(.switch).labelsHidden().controlSize(.mini).disabled(loginItem.isChanging)
             }
             .padding(.horizontal, 6).fixedSize()
         }
@@ -169,7 +172,7 @@ struct ManagerView: View {
 
     private func detail(_ t: Theme, now: Date) -> some View {
         let snapshot = state.snapshot(selected), tool = selected.tool
-        let card = ToolCard.build(snapshot, expanded: true, dismissedUnsavedKey: nil, now: now)
+        let card = ToolCard.build(snapshot, expanded: true, dismissedUnsavedKey: nil, pending: commands.pending[selected], now: now)
         let rows = card.rows
         return GeometryReader { proxy in
             ScrollView {
@@ -205,10 +208,10 @@ struct ManagerView: View {
                                 saveBanner[context] = (ManagerText.saveBanner(result), problem)
                             }
                         } label: {
-                            Text("Save current login").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                            Text(card.pending == .saving ? PendingAction.saving.text : "Save current login").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
                                 .padding(.horizontal, 12).frame(height: 30).background(t.ok, in: RoundedRectangle(cornerRadius: 9))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.plain).disabled(card.pending != nil).opacity(card.pending != nil ? 0.6 : 1)
                     }
                     if let banner = saveBanner[selected] {
                         Text(banner.text).font(.system(size: 12, weight: .semibold)).foregroundStyle(banner.problem ? t.warnText : t.flashText)
@@ -308,14 +311,23 @@ extension ManagerView {
                     HStack(spacing: 4) {
                         Spacer(minLength: 0)
                         Button {
+                            removingContext = context
                             Task {
                                 contextError = await commands.removeContext(context)
+                                removingContext = nil
                                 if contextError == nil, selected == context { selected = .default(tool) }
                             }
                         } label: {
-                            Image(systemName: "trash").font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 26)
+                            Group {
+                                if removingContext == context {
+                                    ProgressView().controlSize(.mini)
+                                } else {
+                                    Image(systemName: "trash").font(.system(size: 11, weight: .semibold))
+                                }
+                            }
+                            .frame(width: 26, height: 26)
                         }
-                        .buttonStyle(.plain).foregroundStyle(t.sub).disabled(context.isDefault).opacity(context.isDefault ? 0 : 1)
+                        .buttonStyle(.plain).foregroundStyle(t.sub).disabled(context.isDefault || removingContext != nil).opacity(context.isDefault ? 0 : 1)
                         .help("Forget this context; its folder and logins stay").accessibilityLabel("Remove context \(context.name)")
                     }
                     .frame(width: Columns.actions)
@@ -335,9 +347,12 @@ extension ManagerView {
                         panel.showsHiddenFiles = true
                         if panel.runModal() == .OK, let url = panel.url { newContextPath = url.path }
                     }
-                    PillButton(title: "Add", fill: t.ok, disabled: newContextPath.trimmingCharacters(in: .whitespaces).isEmpty) {
+                    PillButton(title: addingContext ? "Adding…" : "Add", fill: t.ok,
+                               disabled: addingContext || newContextPath.trimmingCharacters(in: .whitespaces).isEmpty) {
+                        addingContext = true
                         Task {
                             contextError = await commands.addContext(tool, path: newContextPath, name: newContextName)
+                            addingContext = false
                             if contextError == nil { newContextName = ""; newContextPath = "" }
                         }
                     }
@@ -402,7 +417,9 @@ private struct ManagerRowView: View {
             column(row.groups.map { ($0.name, $0.sevenDay) }, t)
             HStack(spacing: 4) {
                 Spacer(minLength: 0)
-                if armed {
+                if let activity = row.activity {
+                    PillButton(title: activity, fill: t.chip, foreground: t.text, disabled: true) {}
+                } else if armed {
                     PillButton(title: "Remove", fill: t.barLow) {
                         armed = false
                         Task { await commands.remove(row.id, in: context) }
@@ -428,7 +445,7 @@ private struct ManagerRowView: View {
                     }
                     .buttonStyle(.plain).foregroundStyle(t.sub).disabled(!row.refreshEnabled).opacity(row.refreshEnabled ? 1 : 0.35).help("Refresh this account")
                     .accessibilityLabel("Refresh \(tool.displayName) \(row.email)")
-                    iconButton("trash", help: "Remove this saved login", enabled: row.isSaved, t) { armed = true }
+                    iconButton("trash", help: "Remove this saved login", enabled: row.removeEnabled, t) { armed = true }
                         .accessibilityLabel("Remove \(row.email)")
                 }
             }

@@ -162,6 +162,7 @@ Candidate scope: create `Sources/MagpieLiteCore/Switch.swift`, `Sources/MagpieLi
 | FR-03.14 | WHEN a Codex switch completes while a managed app-server daemon is running THEN it is restarted at once (`codex app-server daemon restart`, allowed 375 s for Codex's drain) while the notice says so, then says it restarted, or why not with Restart to try again; WHEN the Codex desktop app is running THEN the notice says it still uses the previous account | AC-3 | PRD AC (Codex pick-up) | active | §4 | unit with fake process list; manual run |
 | FR-03.15 | WHEN a Claude or agy switch completes THEN the notice states when the new account takes effect (Claude: new sessions now, running ones within ~30 s; agy: next session) | AC-3 | PRD §Post-switch pick-up | active | §4 | unit on notice text |
 | FR-03.16 | WHEN a Keychain item is written THEN the `security -i` command carries the value as `-w` text when it needs no quoting, else `-X` hex, and a command line over 4032 bytes is sent in argv instead; the tool's own `security -w` read returns the exact bytes written | AC-3 | — design | active | §2 | integration on a disposable keychain: agy-sized text value, Claude-sized hex value, a 5000-byte value |
+| FR-03.17 | WHEN a switch settles THEN its notice shows once the vault is reloaded and that tool's live logins are read again; another tool's queued work (a renewal, a sync-back) is not waited for, and the live refresh comes after the notice | AC-3 | — design | active | §4 | unit on commands with another tool's exclusive section held |
 
 ### F-04 — Allowance monitoring and saved-account renewal   (active · PRD stories 5, 9)
 Candidate scope: create `Sources/MagpieLiteCore/Allowance.swift`, `Sources/MagpieLiteCore/Poller.swift`, `Sources/MagpieLiteCore/AppState.swift`; create test `Tests/MagpieLiteCoreTests/AllowanceParsingTests.swift`, `Tests/MagpieLiteCoreTests/PollerTests.swift`
@@ -237,6 +238,7 @@ Candidate scope: create `Sources/MagpieLite/PopoverView.swift`, `Sources/MagpieL
 | FR-06.10 | WHEN a tool's complete live identity is unsaved THEN the popover shows "<tool> is signed in as <email>, which isn't saved yet." with Save login (performs F-02) and Later, which hides the banner until that tool's live identity changes | AC-6 | PRD story 3 | active | §6 | unit on AppState banner flag; manual run |
 | FR-06.11 | WHEN an on-demand refresh sends nothing (FR-04.16) THEN for 4 s the popover subtitle and the manager titlebar show "Refreshed moments ago. Try again in <N> s.", or "<vendor> is rate-limited. Next check at <HH:MM>." under a 429 backoff; no persistent rate-limit notice is shown | AC-6 | PRD §Freshness | active | §6 | unit on hint text with fixed clock; unit on commands |
 | FR-06.12 | WHEN the popover header is shown THEN its subtitle reads "Live updated <age> · every <N> min", age measured from the last completed live-account fetch | AC-6 | PRD §Freshness | active | §6 | unit on subtitle text with fixed clock |
+| FR-06.13 | WHEN a save, switch, remove or undo runs in a context THEN, from the click until its result shows, the pressed button reads "Saving…", "Switching…" or "Removing…" (the popover's switch arrow spins) and the context's other Switch, Save and Remove buttons are disabled, in the popover and the manager; the manager's Add and a context's Remove wait the same way | AC-6 | — design | active | §6 | unit on RowModel and commands; manual run |
 
 ### F-07 — Management window   (active · PRD stories 8, 11 toggle half, 12)
 Candidate scope: create `Sources/MagpieLite/ManagerView.swift`
@@ -267,7 +269,7 @@ Candidate scope: create `Sources/MagpieLite/LaunchAtLogin.swift`
 
 | FR | WHEN → THEN | AC | Req | Disposition | Source | Evidence intent |
 |---|---|---|---|---|---|---|
-| FR-08.1 | WHEN the toggle changes THEN `SMAppService.mainApp` is registered or unregistered, and the toggle reflects `.status` when the manager opens | AC-8 | PRD story 10 | active | §6 | manual run from `~/Applications/MagpieLite.app` |
+| FR-08.1 | WHEN the toggle changes THEN it moves at once and stays disabled while `SMAppService.mainApp` is registered or unregistered off the main thread, then settles on `.status`; the toggle reflects `.status` when the manager opens | AC-8 | PRD story 10 | active | §6 | unit on LoginItemController; manual run from `~/Applications/MagpieLite.app` |
 | FR-08.2 | WHEN registration throws or the status requires approval THEN the toggle reverts and the status message is shown | AC-8 | — design | active | §6 | manual run |
 
 ### F-09 — Tool contexts   (active · owner request 2026-10-19)
@@ -307,6 +309,7 @@ Candidate scope: create `Sources/ArgusCore/ToolContexts.swift`; modify `ToolEnvi
 - **Context** — one folder a tool runs from, named by its variable's exact value (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`); the default is the variable unset. Accounts are shared by every context (ADR-0004). _Avoid_: profile, environment, workspace.
 
 ## Changelog
+- 2026-10-20 — **Responsiveness (owner request)**: a save, switch, remove or undo marks its context pending from the click until its result shows, labelling the pressed button and disabling the context's other account buttons (FR-06.13); a switch's notice no longer waits for the other tools' live rereads, whose sync-backs could queue behind their renewals (FR-03.17); the launch-at-login toggle registers off the main thread and moves at once (FR-08.1); `readings.json`, written on the main thread after every fetch, is no longer flushed with `F_FULLFSYNC` (vault writes still are, DEC-09).
 - 2026-10-19 — The menubar's context name is drawn in `labelColor` like the values, not `secondaryLabelColor`: the status image isn't a template, so a translucent grey gets no vibrancy and faded on mid-grey wallpapers (FR-09.6).
 - 2026-10-19 — Reset times drop their "in" prefix: "48m", "2h 14m", "6d 18h" (§6, FR-06.7).
 - 2026-10-19 — The menubar shows an added context's name in capitals, as its chip does (FR-09.6).

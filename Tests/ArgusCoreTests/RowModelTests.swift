@@ -107,6 +107,24 @@ fileprivate func card(_ s: ToolSnapshot, expanded: Bool = false) -> ToolCard {
 
     // MARK: F06-AC-6.c6
 
+    @Test func `an action under way in a context names itself on its row and holds the context's other Switch and Remove buttons`() {
+        let accounts = [account("amy@example.com", live: true), account("bob@example.com"), account("cid@example.com", flag: .needsSignIn)]
+        let bob = AccountKey(tool: .claude, id: "bob@example.com")
+        func build(_ pending: PendingAction?) -> ToolCard {
+            ToolCard.build(snapshot(accounts), expanded: true, dismissedUnsavedKey: nil, pending: pending, now: now)
+        }
+        let idle = build(nil)
+        #expect(idle.pending == nil && idle.rows.allSatisfy { $0.activity == nil && $0.removeEnabled })
+        #expect(idle.rows.map(\.switchDisabledReason) == [nil, nil, "Needs sign-in"])
+        let switching = build(.switching(bob))
+        #expect(switching.pending == .switching(bob))
+        #expect(switching.rows.map(\.activity) == [nil, "Switching…", nil])
+        #expect(switching.rows.map(\.switchDisabledReason) == ["Switching…", "Switching…", "Needs sign-in"])
+        #expect(switching.rows.allSatisfy { !$0.removeEnabled })
+        #expect(build(.removing(bob)).rows.map(\.activity) == [nil, "Removing…", nil])
+        #expect(build(.saving).rows.allSatisfy { $0.activity == nil && !$0.removeEnabled })
+    }
+
     @Test func `REQ/F06-AC-6.c6 the live row suggests the best other account when it runs low`() {
         let accounts = [account("live@example.com", live: true, reading: reading([("All models", 12, 50), ("Fable", nil, 60)])),
                         account("good@example.com", reading: reading([("All models", 80, 45)])),

@@ -6,6 +6,13 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+### Fixed
+
+- Save, Switch, Remove and Undo now show that they're working. The button you pressed reads "Saving…", "Switching…" or "Removing…" (in the popover the switch arrow spins), and that context's other account buttons wait until it's done. Adding or removing a context in the manager waits the same way.
+- A switch's result shows as soon as the switch is done. It no longer waits for the other tools' logins to be read again, which could take seconds while one of them was renewing.
+- The Launch at login toggle moves at once and no longer holds up the app while macOS registers it.
+- Saving the latest readings after each refresh no longer waits for the disk.
+
 ## [0.5.2] - 2026-10-19
 
 ### Fixed

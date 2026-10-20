@@ -115,7 +115,9 @@ public struct TaskSleeper: Sleeper {
                        strikes: strikes[key], backoffEnd: backoffEnd[key], lastAttempt: lastAttempt[key],
                        needsSignIn: state.status[key]?.flag == .needsSignIn ? flaggedPayload[key] : nil)
         }
-        if let data = try? JSONEncoder().encode(saved) { _ = writeFileAtomically(data, to: readingsFile) }
+        // Not flushed: this runs on the main thread after every fetch, and F_FULLFSYNC waits on the disk. A power cut can
+        // cost the last readings at most; an unreadable file is ignored at launch.
+        if let data = try? JSONEncoder().encode(saved) { _ = writeFileAtomically(data, to: readingsFile, flush: false) }
     }
 
     /// One batch now, then forever: sleep the interval → batch.
@@ -221,9 +223,9 @@ public struct TaskSleeper: Sleeper {
         return sent ? nil : deferrals.min { $0.until < $1.until }
     }
 
-    /// Each context's live login read again, Codex and agy synced back; no network request (the popover opening).
-    public func rereadLive() async {
-        for tool in Tool.allCases {
+    /// Each context's live login of `tools` read again, Codex and agy synced back; no network request.
+    public func rereadLive(_ tools: [Tool] = Tool.allCases) async {
+        for tool in tools {
             let reads = await readLive(tool)
             if tool != .claude { for read in reads { await syncBack(read, baseline: nil) } }
         }

@@ -11,6 +11,20 @@ import ArgusCore
     ToolCard.build(rig.state.snapshot(.default(tool)), expanded: false, dismissedUnsavedKey: cmds.dismissedUnsaved[.default(tool)], now: rig.clock.now).unsavedBanner
 }
 
+/// A ChatGPT `auth.json` for `<tag>@example.com`.
+fileprivate func codexAuth(_ tag: String) -> String {
+    let id = testJWT(["email": "\(tag)@example.com", "https://api.openai.com/auth": ["chatgpt_account_id": "acct-\(tag)"]])
+    return #"{"auth_mode":"chatgpt","tokens":{"id_token":"\#(id)","access_token":"test-access-\#(tag)","refresh_token":"test-refresh-\#(tag)"}}"#
+}
+
+/// Holds `tool`'s exclusive section, as a renewal in flight would, until the gate opens.
+fileprivate func holdSection(_ vault: Vault, _ tool: Tool) async -> (gate: TestGate, task: Task<Void, any Error>) {
+    let started = TestGate(), gate = TestGate()
+    let task = Task { try await vault.exclusive(tool) { await started.release(); await gate.wait() } }
+    await started.wait()
+    return (gate, task)
+}
+
 @MainActor @Suite struct UnsavedBannerTests {
     // MARK: F01-AC-1.c9
 
@@ -72,15 +86,54 @@ import ArgusCore
         }
     }
 
-    @Test func `a switch through the commands sets the notice and refreshes the live accounts`() async throws {
-        func auth(_ tag: String) -> String {
-            let id = testJWT(["email": "\(tag)@example.com", "https://api.openai.com/auth": ["chatgpt_account_id": "acct-\(tag)"]])
-            return #"{"auth_mode":"chatgpt","tokens":{"id_token":"\#(id)","access_token":"test-access-\#(tag)","refresh_token":"test-refresh-\#(tag)"}}"#
-        }
-        let rig = try PollerRig()
-        try rig.box.write("codex/auth.json", auth("b"))
+    @Test func `Save marks its context as saving while it waits for the tool's queued work`() async throws {
+        let rig = try PollerRig(live: [.agy: [.signedIn(testLogin(.agy, "g"))]])
+        let cmds = commands(rig)
+        let agy = await holdSection(rig.vault, .agy)
+        let saving = Task { await cmds.save(.default(.agy)) }
+        while cmds.pending[.default(.agy)] == nil { await Task.yield() }
+        #expect(cmds.pending[.default(.agy)] == .saving)
+        #expect(await rig.vault.entries(.default(.agy)).isEmpty)
+        await agy.gate.release()
+        #expect(await saving.value == .saved(email: "g@example.com"))
+        #expect(cmds.pending.isEmpty)
+        try await agy.task.value
+    }
+
+    @Test func `a switch's notice shows without waiting for another tool's queued work`() async throws {
+        let rig = try PollerRig(live: [.agy: [.signedIn(testLogin(.agy, "g", expiry: Date(timeIntervalSince1970: 4_100_000_000)))]])
+        // agy's live bytes differ from its saved ones: rereading agy syncs them back, inside agy's exclusive section.
+        try await rig.save(testLogin(.agy, "g"))
+        try rig.box.write("codex/auth.json", codexAuth("b"))
         let target = try await rig.vault.save(await CodexTool(env: rig.box.env).readLive())
-        try rig.box.write("codex/auth.json", auth("a"))
+        try rig.box.write("codex/auth.json", codexAuth("a"))
+        let agy = await holdSection(rig.vault, .agy), codex = await holdSection(rig.vault, .codex)
+        let cmds = commands(rig)
+        let key = AccountKey(tool: .codex, id: target.identity.fileID)
+        let switching = Task { await cmds.switchTo(key, in: .default(.codex)) }
+        while cmds.pending[.default(.codex)] == nil { await Task.yield() }
+        #expect(cmds.pending[.default(.codex)] == .switching(key))
+        #expect(cmds.notice == nil)
+        await codex.gate.release()
+        try await codex.task.value
+        var waited = 0
+        while cmds.notice == nil, waited < 500 {
+            try await Task.sleep(for: .milliseconds(10))
+            waited += 1
+        }
+        #expect(cmds.notice == "Codex now signs in as b@example.com.")
+        #expect(cmds.pending.isEmpty)
+        // Only the live refresh after the notice waits for agy's section.
+        await agy.gate.release()
+        #expect(await switching.value == .switched(notice: "Codex now signs in as b@example.com.", daemonRunning: false))
+        try await agy.task.value
+    }
+
+    @Test func `a switch through the commands sets the notice and refreshes the live accounts`() async throws {
+        let rig = try PollerRig()
+        try rig.box.write("codex/auth.json", codexAuth("b"))
+        let target = try await rig.vault.save(await CodexTool(env: rig.box.env).readLive())
+        try rig.box.write("codex/auth.json", codexAuth("a"))
         let cmds = commands(rig)
         let outcome = await cmds.switchTo(AccountKey(tool: .codex, id: target.identity.fileID), in: .default(.codex))
         #expect(outcome == .switched(notice: "Codex now signs in as b@example.com.", daemonRunning: false))
@@ -96,16 +149,12 @@ import ArgusCore
     }
 
     @Test func `REQ/F03-AC-3.c14 a Codex switch with the app-server running restarts it at once and says how it went`() async throws {
-        func auth(_ tag: String) -> String {
-            let id = testJWT(["email": "\(tag)@example.com", "https://api.openai.com/auth": ["chatgpt_account_id": "acct-\(tag)"]])
-            return #"{"auth_mode":"chatgpt","tokens":{"id_token":"\#(id)","access_token":"test-access-\#(tag)","refresh_token":"test-refresh-\#(tag)"}}"#
-        }
         let lead = "Codex now signs in as b@example.com."
         for failure in [nil, "timed out"] as [String?] {
             let rig = try PollerRig()
-            try rig.box.write("codex/auth.json", auth("b"))
+            try rig.box.write("codex/auth.json", codexAuth("b"))
             let target = try await rig.vault.save(await CodexTool(env: rig.box.env).readLive())
-            try rig.box.write("codex/auth.json", auth("a"))
+            try rig.box.write("codex/auth.json", codexAuth("a"))
             let gate = TestGate()
             let switcher = Switcher(env: rig.box.env, vault: rig.vault, processes: ProcessListing { ["77 /opt/homebrew/bin/codex app-server --managed-daemon"] })
             let cmds = AccountCommands(state: rig.state, poller: rig.poller, vault: rig.vault, tools: Tool.allCases.map { rig.tools[$0]! },

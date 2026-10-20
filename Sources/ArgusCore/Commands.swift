@@ -14,6 +14,22 @@ public enum SaveResult: Sendable, Equatable {
     }
 }
 
+/// What a context is busy with, from the click until its result shows: its other account buttons wait meanwhile.
+public enum PendingAction: Sendable, Equatable {
+    case saving, restoring
+    case switching(AccountKey), removing(AccountKey)
+
+    /// The pressed button's label meanwhile.
+    public var text: String {
+        switch self {
+        case .saving: "Saving…"
+        case .restoring: "Restoring…"
+        case .switching: "Switching…"
+        case .removing: "Removing…"
+        }
+    }
+}
+
 /// What the popover and the manager do to accounts: save, switch, dismiss.
 @MainActor @Observable public final class AccountCommands {
     @ObservationIgnored let state: AppState
@@ -42,6 +58,8 @@ public enum SaveResult: Sendable, Equatable {
     /// The last removed entry's raw bytes, held only while Undo is possible.
     @ObservationIgnored private var removed: RemovedEntry?
     private var removedEmail: String?
+    /// Per context: the save, switch, remove or undo under way there.
+    public private(set) var pending: [ToolContext: PendingAction] = [:]
 
     public init(state: AppState, poller: Poller, vault: Vault, tools: [any ToolAdapter], switcher: Switcher,
                 restartDaemon: (@Sendable (ToolContext) async -> String?)? = nil) {
@@ -57,6 +75,8 @@ public enum SaveResult: Sendable, Equatable {
     public func save(_ context: ToolContext) async -> SaveResult {
         let tool = context.tool
         guard let adapter = tools[tool]?.scoped(to: context) else { return .refused("not signed in") }
+        pending[context] = .saving
+        defer { pending[context] = nil }
         let vault = vault
         let result: SaveResult
         do {
@@ -77,9 +97,12 @@ public enum SaveResult: Sendable, Equatable {
     /// Switches `context` to the account. The notice shows as soon as the switch settles; the live refresh, which a
     /// running batch can hold up, comes after.
     public func switchTo(_ key: AccountKey, in context: ToolContext) async -> SwitchOutcome {
+        pending[context] = .switching(key)
         let outcome = await switcher.switchTo(key, in: context, alongside: state.contexts(key.tool))
         await poller.reloadVault()
-        await poller.rereadLive()
+        // Only this tool's stores changed; rereading another could wait behind that tool's own queued work.
+        await poller.rereadLive([key.tool])
+        pending[context] = nil
         guard case .switched(let text, let daemonRunning) = outcome else {
             if case .refused(let text) = outcome { show(text, problem: true) }
             if case .failed(let text) = outcome { show(text, problem: true) }
@@ -155,6 +178,8 @@ extension AccountCommands {
     /// Deletes the saved login from the context's list inside the tool's exclusive section, keeping its raw bytes for Undo.
     public func remove(_ key: AccountKey, in context: ToolContext) async {
         closeUndo()
+        pending[context] = .removing(key)
+        defer { pending[context] = nil }
         let email: String = if case .valid(let e)? = state.saved(context).first(where: { $0.id == key.id }), !e.label.isEmpty {
             e.label
         } else {
@@ -172,6 +197,8 @@ extension AccountCommands {
     public func undo() async {
         guard let entry = removed else { return }
         closeUndo()
+        pending[entry.context] = .restoring
+        defer { pending[entry.context] = nil }
         let vault = vault
         _ = try? await vault.exclusive(entry.tool) { try await vault.restore(entry) }
         await poller.reloadVault()
@@ -216,7 +243,7 @@ extension AccountCommands {
         saveContexts(tool)
         // A path added before brings back the list it had.
         await poller.reloadVault()
-        await poller.rereadLive()
+        await poller.rereadLive([tool])
         return nil
     }
 

@@ -88,8 +88,12 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
     /// nil → Switch enabled (live rows show the Live pill instead).
     public let switchDisabledReason: String?
     public let refreshEnabled: Bool
+    /// The switch to this account or its removal under way: what its button says meanwhile.
+    public let activity: String?
+    /// A saved account, and nothing under way in its context.
+    public let removeEnabled: Bool
 
-    init(_ account: AccountSnapshot, live: LiveState?, now: Date) {
+    init(_ account: AccountSnapshot, live: LiveState?, pending: PendingAction?, now: Date) {
         id = account.key
         email = account.label.isEmpty ? "Unknown account" : account.label
         let local = email.prefix { $0 != "@" }
@@ -146,9 +150,15 @@ public struct AccountRow: Sendable, Equatable, Identifiable {
         if let live, !live.allowsSwitch {
             switchDisabledReason = live.statusText(account.key.tool)
         } else {
-            switchDisabledReason = blocked?.1
+            // While its context is busy, a switch would only queue behind what runs there.
+            switchDisabledReason = blocked?.1 ?? pending?.text
         }
         refreshEnabled = account.isLive || blocked == nil
+        activity = switch pending {
+        case .switching(account.key)?, .removing(account.key)?: pending?.text
+        default: nil
+        }
+        removeEnabled = account.isSaved && pending == nil
     }
 
     /// The line under the popover name: the plan, then "live" for the live account ("Max · live").
@@ -201,12 +211,15 @@ public struct ToolCard: Sendable, Equatable {
     /// The context this card is the section of; its name while the tool has several (`ToolSnapshot.contextName`).
     public let context: ToolContext
     public let contextName: String?
+    /// The save, switch, remove or undo under way in the context (`AccountCommands.pending`).
+    public let pending: PendingAction?
 
-    public static func build(_ snapshot: ToolSnapshot, expanded: Bool, dismissedUnsavedKey: String?, now: Date) -> ToolCard {
+    public static func build(_ snapshot: ToolSnapshot, expanded: Bool, dismissedUnsavedKey: String?, pending: PendingAction? = nil,
+                             now: Date) -> ToolCard {
         let live = snapshot.accounts.first(where: \.isLive)
         let ordered = snapshot.accounts.sorted { ($0.label.lowercased(), $0.key.id) < ($1.label.lowercased(), $1.key.id) }
         let rest = ordered.filter { !$0.isLive }
-        let rows = ordered.map { AccountRow($0, live: snapshot.live, now: now) }
+        let rows = ordered.map { AccountRow($0, live: snapshot.live, pending: pending, now: now) }
         let others = rows.filter { !$0.isLive }
         var suggestion: Suggestion?
         if let live, !live.stale, let score = AccountRow.score(live), Int(score.rounded()) < 15 {
@@ -235,7 +248,7 @@ public struct ToolCard: Sendable, Equatable {
         return ToolCard(tool: snapshot.tool, liveRow: rows.first(where: \.isLive), liveStatusText: statusText,
                         others: others, rows: rows, moreLabel: others.isEmpty ? nil : expanded ? "Live only" : "+\(others.count) more",
                         columns: columns.isEmpty ? ["5h", "7d"] : columns, suggestion: suggestion, unsavedBanner: unsaved,
-                        context: snapshot.context, contextName: snapshot.contextName)
+                        context: snapshot.context, contextName: snapshot.contextName, pending: pending)
     }
 }
 

@@ -31,7 +31,8 @@ struct PopoverView: View {
 
     private func content(_ t: Theme, now: Date) -> some View {
         let cards = Tool.allCases.flatMap(state.contexts).filter(preferences.isInPopover).map { context in
-            ToolCard.build(state.snapshot(context).hidingMinorGroups, expanded: expanded.contains(context), dismissedUnsavedKey: commands.dismissedUnsaved[context], now: now)
+            ToolCard.build(state.snapshot(context).hidingMinorGroups, expanded: expanded.contains(context), dismissedUnsavedKey: commands.dismissedUnsaved[context],
+                           pending: commands.pending[context], now: now)
         }
         // The whole popover fits the screen: what's left after the header, notices, footer and the arrow's margin.
         let maxCards = max(240, screen.visibleHeight - topHeight - footerHeight - 32)
@@ -95,7 +96,9 @@ struct PopoverView: View {
         ForEach(cards.filter { $0.unsavedBanner != nil }, id: \.context) { card in
             NoticeView(theme: t, icon: "exclamationmark.triangle", tint: t.warnText, background: t.warnBg, text: card.unsavedBanner!, onDismiss: nil) {
                 HStack(spacing: 6) {
-                    PillButton(title: "Save login", fill: t.ok) { Task { await commands.save(card.context) } }
+                    PillButton(title: card.pending == .saving ? PendingAction.saving.text : "Save login", fill: t.ok, disabled: card.pending != nil) {
+                        Task { await commands.save(card.context) }
+                    }
                     PillButton(title: "Later", fill: t.btn, foreground: t.text) { commands.later(card.context) }
                 }
             }
@@ -172,8 +175,10 @@ struct CardView: View {
                 .font(.system(size: 9.5, weight: .semibold)).tracking(0.6).foregroundStyle(t.ter).lineLimit(1)
                 .padding(EdgeInsets(top: 0, leading: 12, bottom: 5, trailing: 12))
             }
+            // The suggested account's own row: its Switch state, also when the card is collapsed.
+            let suggested = card.suggestion.flatMap { s in card.rows.first { $0.id == s.target } }
             if let live = card.liveRow, !expanded {
-                RowView(row: live, tool: card.tool, columns: card.columns, suggestion: card.suggestion, theme: t, actions: actions)
+                RowView(row: live, tool: card.tool, columns: card.columns, suggestion: card.suggestion, suggested: suggested, theme: t, actions: actions)
             } else if card.liveRow == nil, let status = card.liveStatusText {
                 HStack {
                     Text(status).font(.system(size: 12)).foregroundStyle(t.sub)
@@ -183,7 +188,9 @@ struct CardView: View {
                 .overlay(alignment: .top) { t.hair.frame(height: 1) }
             }
             if expanded {
-                ForEach(card.rows) { RowView(row: $0, tool: card.tool, columns: card.columns, suggestion: $0.isLive ? card.suggestion : nil, theme: t, actions: actions) }
+                ForEach(card.rows) {
+                    RowView(row: $0, tool: card.tool, columns: card.columns, suggestion: $0.isLive ? card.suggestion : nil, suggested: suggested, theme: t, actions: actions)
+                }
             }
         }
         .background(t.card)
@@ -206,6 +213,7 @@ struct RowView: View {
     /// The card's window columns (`ToolCard.columns`).
     let columns: [String]
     let suggestion: Suggestion?
+    let suggested: AccountRow?
     let theme: Theme
     let actions: CardView.Actions
 
@@ -235,11 +243,17 @@ struct RowView: View {
                 HStack(spacing: 4) {
                     if !row.isLive {
                         Button { actions.switchTo(row.id) } label: {
-                            Image(systemName: "arrow.left.arrow.right").font(.system(size: 10, weight: .bold)).foregroundStyle(t.text)
-                                .frame(width: 24, height: 24).background(t.btn, in: RoundedRectangle(cornerRadius: 7))
+                            Group {
+                                if row.activity != nil {
+                                    ProgressView().controlSize(.mini)
+                                } else {
+                                    Image(systemName: "arrow.left.arrow.right").font(.system(size: 10, weight: .bold)).foregroundStyle(t.text)
+                                }
+                            }
+                            .frame(width: 24, height: 24).background(t.btn, in: RoundedRectangle(cornerRadius: 7))
                         }
                         .buttonStyle(HoverStyle(filled: AnyShape(RoundedRectangle(cornerRadius: 7))))
-                        .disabled(row.switchDisabledReason != nil).opacity(row.switchDisabledReason != nil ? 0.4 : 1)
+                        .disabled(row.switchDisabledReason != nil).opacity(row.switchDisabledReason != nil && row.activity == nil ? 0.4 : 1)
                         .help(row.switchDisabledReason ?? "Switch \(tool.displayName) to \(row.email)")
                         .accessibilityLabel("Switch \(tool.displayName) to \(row.email)")
                     }
@@ -255,7 +269,7 @@ struct RowView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle").font(.system(size: 11, weight: .semibold))
                     Text(suggestion.text).font(.system(size: 11.5)).frame(maxWidth: .infinity, alignment: .leading)
-                    PillButton(title: "Switch", fill: t.ok) { actions.switchTo(suggestion.target) }
+                    PillButton(title: suggested?.activity ?? "Switch", fill: t.ok, disabled: suggested?.switchDisabledReason != nil) { actions.switchTo(suggestion.target) }
                 }
                 .foregroundStyle(t.warnText).padding(EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 6))
                 .background(t.warnBg, in: RoundedRectangle(cornerRadius: 9))
