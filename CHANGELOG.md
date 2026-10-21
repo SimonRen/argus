@@ -6,6 +6,10 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+### Fixed
+
+- Argus no longer slows down the longer it runs. Each time the popover opened and closed, the menubar started redrawing a few more times on every update, so after a while each poll kept the app busy for seconds: the pointer spun and buttons were slow to respond. It now redraws once per update, and each redraw is cheaper.
+
 ## [0.5.3] - 2026-10-20
 
 ### Fixed

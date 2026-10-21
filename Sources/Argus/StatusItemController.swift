@@ -15,11 +15,31 @@ struct PopoverWarmup {
     }
 }
 
+/// Keeps one observation armed for a redraw however it was called. An observation lasts until its first change, so a
+/// redraw called for another reason (the menubar's appearance, about four times per popover open and close) left the
+/// previous one armed beside it, and each state change then redrew once per such call since launch.
+@MainActor final class RedrawTracking {
+    private var generation = 0
+
+    /// `build`'s result; `onChange` runs once, on the main actor, after what it read changes, unless `track` ran again since.
+    func track<T>(_ build: () -> T, onChange: @escaping @MainActor @Sendable () -> Void) -> T {
+        generation += 1
+        let armed = generation
+        return withObservationTracking(build) { [weak self] in
+            Task { @MainActor in
+                guard let self, self.generation == armed else { return }
+                onChange()
+            }
+        }
+    }
+}
+
 /// Owns the status item and redraws it whenever the summary, a Show-in-menubar choice or the menubar's appearance changes.
 @MainActor final class StatusItemController: NSObject, NSPopoverDelegate {
     let item: NSStatusItem
     private let state: AppState
     private let preferences: MenuBarPreferences
+    private let redraws = RedrawTracking()
     private var appearanceObservation: NSKeyValueObservation?
     private var activation: NSObjectProtocol?
     /// Clicks in other apps while the popover is shown.
@@ -123,10 +143,10 @@ struct PopoverWarmup {
 
     /// Draws the current summary and re-arms observation of everything it read.
     private func render() {
-        let summary = withObservationTracking {
+        let summary = redraws.track {
             MenuBarSummary.build(Tool.allCases.flatMap(state.contexts).map(state.snapshot), isShown: preferences.isShown)
         } onChange: { [weak self] in
-            Task { @MainActor in self?.render() }
+            self?.render()
         }
         guard let button = item.button else { return }
         button.image = summary.showsGlyphOnly ? Self.glyph() : Self.image(summary)

@@ -1,9 +1,16 @@
 import CryptoKit
 import Foundation
 
-/// Lowercase hex SHA-256.
+/// Lowercase hex SHA-256. Every popover and menubar redraw hashes each account's id, so it skips `String(format:)`.
 public func sha256Hex(_ data: Data) -> String {
-    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    let digits = Array("0123456789abcdef".utf8)
+    var hex: [UInt8] = []
+    hex.reserveCapacity(64)
+    for byte in SHA256.hash(data: data) {
+        hex.append(digits[Int(byte >> 4)])
+        hex.append(digits[Int(byte & 0x0f)])
+    }
+    return String(decoding: hex, as: UTF8.self)
 }
 
 /// Who a login belongs to. Complete identities are keyed by account; incomplete ones by their refresh token's
