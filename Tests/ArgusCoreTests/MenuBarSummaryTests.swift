@@ -46,13 +46,29 @@ fileprivate func value(_ text: String, _ low: Bool = false) -> MenuBarValue { Me
 
     // MARK: F05-AC-5.c2
 
-    @Test func `REQ/F05-AC-5.c2 the menubar shows only the 7 d, the highest used across the live account's groups, agy's Claude and GPT group left out`() {
+    @Test func `REQ/F05-AC-5.c2 with Show 5h in menubar off the menubar shows only the 7 d, the highest used across the live account's groups, agy's Claude and GPT group left out`() {
         let agy = MenuBarSummary.build([snapshot(.agy, groups: [group("Gemini", 45, 90), group("Gemini Pro", 60, 95), group("Claude and GPT", 0, 0)])]) { _ in true }
         #expect(agy.segments.first?.sevenDay == value("10%"))
         let claude = MenuBarSummary.build([snapshot(.claude, groups: [group("All models", 62, 40), group("Fable", nil, 28)])]) { _ in true }
         #expect(claude.segments.first?.sevenDay == value("72%"))
         let fiveHourOnly = MenuBarSummary.build([snapshot(.codex, groups: [group("", 54, nil)])]) { _ in true }
         #expect(fiveHourOnly.segments.first?.sevenDay == value("—"))
+    }
+
+    @Test func `REQ/F05-AC-5.c2 a context with Show 5h in menubar on shows its 5 h over its 7 d, each the highest used across the groups`() {
+        let claude = MenuBarSummary.build([snapshot(.claude, groups: [group("All models", 62, 40), group("Fable", nil, 28)])], fiveHour: { _ in true }) { _ in true }
+        #expect(claude.segments.first?.fiveHour == value("38%") && claude.segments.first?.sevenDay == value("72%"))
+        let agy = MenuBarSummary.build([snapshot(.agy, groups: [group("Gemini", 45, 90), group("Gemini Pro", 10, 95), group("Claude and GPT", 0, 0)])], fiveHour: { _ in true }) { _ in true }
+        #expect(agy.segments.first?.fiveHour == value("90%", true))
+        let weeklyOnly = MenuBarSummary.build([snapshot(.codex, groups: [group("", nil, 54)])], fiveHour: { _ in true }) { _ in true }
+        #expect(weeklyOnly.segments.first?.fiveHour == value("—"))
+        let unread = MenuBarSummary.build([snapshot(.codex, groups: nil)], fiveHour: { _ in true }) { _ in true }
+        #expect(unread.segments.first?.fiveHour == value("—"))
+        let mixed = MenuBarSummary.build([snapshot(.claude, groups: [group("", 62, 40)]), snapshot(.codex, groups: [group("", 80, 71)])],
+                                         fiveHour: { $0.tool == .codex }) { _ in true }
+        #expect(mixed.segments.map(\.fiveHour) == [nil, value("20%")])
+        let off = MenuBarSummary.build([snapshot(.claude, groups: [group("All models", 62, 40)])]) { _ in true }
+        #expect(off.segments.first?.fiveHour == nil)
     }
 
     @Test func `the manager sidebar still shows the live account's 5 h and 7 d`() {
@@ -97,6 +113,8 @@ fileprivate func value(_ text: String, _ low: Bool = false) -> MenuBarValue { Me
         #expect(weekly.accessibilityLabel == "Antigravity CLI 7 d 46% used")
         let noWeek = MenuBarSummary.build([snapshot(.agy, groups: [group("", 54, nil)])]) { _ in true }
         #expect(noWeek.accessibilityLabel == "Antigravity CLI 7 d —")
+        let stacked = MenuBarSummary.build([snapshot(.claude, groups: [group("", 62, 40)]), snapshot(.agy, groups: [group("", nil, 54)])], fiveHour: { _ in true }) { _ in true }
+        #expect(stacked.accessibilityLabel == "Claude Code 5 h 38% used, 7 d 60% used; Antigravity CLI 5 h —, 7 d 46% used")
     }
 
     // MARK: F05-AC-5.c7
@@ -136,5 +154,21 @@ fileprivate func value(_ text: String, _ low: Bool = false) -> MenuBarValue { Me
         #expect(!prefs.isInPopover(.default(.codex)) && prefs.isShown(.default(.codex)))
         let restarted = MenuBarPreferences(defaults: UserDefaults(suiteName: suite)!)
         #expect(!restarted.isInPopover(.default(.codex)) && restarted.isInPopover(.default(.claude)) && restarted.isShown(.default(.codex)))
+    }
+
+    // MARK: F05-AC-5.c9
+
+    @MainActor @Test func `REQ/F05-AC-5.c9 Show 5h in menubar is off until set, per context, and a change survives a restart`() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let prefs = MenuBarPreferences(defaults: defaults)
+        let added = ToolContext(tool: .claude, path: "/tmp/x", name: "x")
+        #expect(Tool.allCases.allSatisfy { !prefs.showsFiveHour(.default($0)) } && !prefs.showsFiveHour(added))
+        prefs.setShowsFiveHour(.default(.codex), true)
+        #expect(prefs.showsFiveHour(.default(.codex)) && !prefs.showsFiveHour(.default(.claude)))
+        #expect(defaults.object(forKey: "showFiveHourInMenubar.codex") as? Bool == true)
+        let restarted = MenuBarPreferences(defaults: UserDefaults(suiteName: suite)!)
+        #expect(restarted.showsFiveHour(.default(.codex)) && !restarted.showsFiveHour(.default(.agy)) && !restarted.showsFiveHour(added))
     }
 }

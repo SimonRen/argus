@@ -6,6 +6,14 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+### Added
+
+- A 5h switch beside Show in menubar on each provider's page in the manager. When it's on, the menubar shows that provider's 5-hour use above its 7-day use. It's off by default.
+
+### Changed
+
+- The manager window can't be made narrower than 1000 pt, so each provider's header keeps room for its name beside the new switch.
+
 ## [0.5.4] - 2026-10-21
 
 ### Fixed

@@ -144,7 +144,7 @@ struct PopoverWarmup {
     /// Draws the current summary and re-arms observation of everything it read.
     private func render() {
         let summary = redraws.track {
-            MenuBarSummary.build(Tool.allCases.flatMap(state.contexts).map(state.snapshot), isShown: preferences.isShown)
+            MenuBarSummary.build(Tool.allCases.flatMap(state.contexts).map(state.snapshot), fiveHour: preferences.showsFiveHour, isShown: preferences.isShown)
         } onChange: { [weak self] in
             self?.render()
         }
@@ -161,6 +161,8 @@ struct PopoverWarmup {
     private static let padding: CGFloat = 2, mark: CGFloat = 14, iconMark: CGFloat = 20, gap: CGFloat = 1, spacing: CGFloat = 5, height: CGFloat = 22
     /// The menu bar's own font (size and regular weight), with digits of equal width so values don't shift as they change.
     private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)
+    /// The 5 h over 7 d rows: two lines fit the 22 pt button.
+    private static let stackedFont = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold)
     private static let letterFont = NSFont.systemFont(ofSize: 8.5, weight: .heavy)
     /// An added context's name between the mark and the value, in capitals as on its chip. It sets itself apart by size
     /// and weight, not a dimmer colour: this image isn't a template, so a translucent grey gets no vibrancy and fades
@@ -188,7 +190,9 @@ struct PopoverWarmup {
     /// after launch already matches the menu bar (resolving them up front drew a light-mode image until the button settled).
     static func image(_ summary: MenuBarSummary) -> NSImage {
         let label = NSColor.labelColor
-        let widths = summary.segments.map { width($0.sevenDay.text) }
+        let widths = summary.segments.map { segment in
+            segment.fiveHour.map { max(width($0.text, stackedFont), width(segment.sevenDay.text, stackedFont)) } ?? width(segment.sevenDay.text)
+        }
         let glyphs = summary.segments.map { ToolIcon.glyph($0.tool).map { tinted($0, label) } }
         let names = summary.segments.map { $0.context.map { NSAttributedString(string: $0.uppercased(), attributes: [.font: contextFont, .foregroundColor: label]) } }
         // A name sits 3 pt after the mark and, with `gap`, 3 pt before the value.
@@ -214,10 +218,14 @@ struct PopoverWarmup {
                     letter.draw(at: NSPoint(x: x + (mark - size.width) / 2, y: (height - size.height) / 2))
                 }
                 x += markWidth + gap
-                let value = segment.sevenDay
-                let text = NSAttributedString(string: value.text, attributes: [.font: valueFont, .foregroundColor: value.severity == .low ? low : label])
-                let size = text.size()
-                text.draw(at: NSPoint(x: x + valueWidth - size.width, y: (height - size.height) / 2))
+                // One row centred in the button, or 5 h over 7 d, each right-aligned and centred in its half.
+                let rows: [(MenuBarValue, bottom: CGFloat, height: CGFloat)] = segment.fiveHour.map { [($0, height / 2, height / 2), (segment.sevenDay, 0, height / 2)] } ?? [(segment.sevenDay, 0, height)]
+                for (value, bottom, rowHeight) in rows {
+                    let font = segment.fiveHour == nil ? valueFont : stackedFont
+                    let text = NSAttributedString(string: value.text, attributes: [.font: font, .foregroundColor: value.severity == .low ? low : label])
+                    let size = text.size()
+                    text.draw(at: NSPoint(x: x + valueWidth - size.width, y: bottom + (rowHeight - size.height) / 2))
+                }
                 x += valueWidth + spacing
             }
             return true
@@ -226,8 +234,8 @@ struct PopoverWarmup {
         return image
     }
 
-    private static func width(_ text: String) -> CGFloat {
-        ceil(NSAttributedString(string: text, attributes: [.font: valueFont]).size().width)
+    private static func width(_ text: String, _ font: NSFont = valueFont) -> CGFloat {
+        ceil(NSAttributedString(string: text, attributes: [.font: font]).size().width)
     }
 
     /// The app glyph: three rising rounded bars, as a template image.

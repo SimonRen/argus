@@ -28,7 +28,8 @@ import SwiftUI
         window.title = "Argus"
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 900, height: 560)
+        // Wide enough that the detail header's title keeps the room it had before the 5h switch joined the Show in group.
+        window.minSize = NSSize(width: 1000, height: 560)
         // SwiftUI's title and toolbar become the window's own: one native row beside the traffic lights.
         let host = NSHostingController(rootView: makeView())
         host.sceneBridgingOptions = [.title, .toolbars]
@@ -193,6 +194,11 @@ struct ManagerView: View {
                             Toggle("Show \(tool.displayName) in menubar",
                                    isOn: Binding(get: { preferences.isShown(selected) }, set: { preferences.setShown(selected, $0) }))
                                 .toggleStyle(.switch).labelsHidden().controlSize(.small)
+                            Text("5h").font(.system(size: 12)).fixedSize().padding(.leading, 4)
+                            Toggle("Show \(tool.displayName) 5h in menubar",
+                                   isOn: Binding(get: { preferences.showsFiveHour(selected) }, set: { preferences.setShowsFiveHour(selected, $0) }))
+                                .toggleStyle(.switch).labelsHidden().controlSize(.small).disabled(!preferences.isShown(selected))
+                                .help("Show the 5-hour use above the 7-day use in the menubar")
                             Text("Popover").font(.system(size: 12)).fixedSize().padding(.leading, 4)
                             Toggle("Show \(tool.displayName) in popover",
                                    isOn: Binding(get: { preferences.isInPopover(selected) }, set: { preferences.setInPopover(selected, $0) }))
