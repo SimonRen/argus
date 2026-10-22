@@ -6,6 +6,10 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+### Added
+
+- The popover shows Argus's version after its name.
+
 ## [0.6.0] - 2026-10-22
 
 ### Added

@@ -9,6 +9,8 @@ import SwiftUI
 
 /// The popover: header, notices, one card per tool context, footer (ui/Main.dc.html).
 struct PopoverView: View {
+    /// Stamped from `VERSION` by `make build`; nil outside an app bundle.
+    private static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
     let state: AppState
     let commands: AccountCommands
     let screen: PopoverScreen
@@ -64,7 +66,10 @@ struct PopoverView: View {
     private func header(_ t: Theme, now: Date) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Argus").font(.system(size: 15, weight: .semibold))
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("Argus").font(.system(size: 15, weight: .semibold))
+                    if let version = Self.version { Text(version).font(.system(size: 11.5)).foregroundStyle(t.ter) }
+                }
                 Text(commands.hint ?? PopoverText.subtitle(lastLiveFetch: state.liveUpdatedAt, intervalMinutes: state.intervalMinutes, now: now))
                     .font(.system(size: 11.5)).foregroundStyle(commands.hint == nil ? t.sub : t.warnText)
                     .lineLimit(1).minimumScaleFactor(0.85).animation(.easeInOut(duration: 0.2), value: commands.hint)
