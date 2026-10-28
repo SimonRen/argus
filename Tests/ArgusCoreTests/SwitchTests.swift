@@ -228,7 +228,7 @@ fileprivate final class Fixture: @unchecked Sendable {
         guard case .switched = await f.switcher().switchTo(target) else { Issue.record("switch failed"); return }
         let entries = await f.vault.entries(.default(.agy))
         #expect(entries.count == 2)
-        let kept = entries.compactMap { if case .valid(let e) = $0, e.identityKey == "agy:sub-a" { e } else { nil } }.first
+        let kept = entries.compactMap { if case .valid(let e) = $0, e.identityKey == "agy:a@example.com" { e } else { nil } }.first
         #expect(kept?.kept == true)
         #expect(kept?.origin == .kept)
         #expect(kept?.payloadBytes == utf8(agyValue("a")))

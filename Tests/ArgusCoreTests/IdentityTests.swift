@@ -15,9 +15,10 @@ import ArgusCore
         #expect(claude.incompleteFingerprint == nil)
         #expect(Identity.codex(email: "x@y.z", accountID: "acct", refreshToken: nil).key == "codex:x@y.z:acct")
         let agy = Identity.agy(subject: "sub", email: "E@x.com", refreshToken: nil)
-        #expect(agy.key == "agy:sub")
+        #expect(agy.key == "agy:e@x.com")
         #expect(agy.isComplete)
-        #expect(AccountKey(tool: .agy, id: agy.fileID) == AccountKey(tool: .agy, id: sha256Hex(utf8("agy:sub"))))
+        #expect(AccountKey(tool: .agy, id: agy.fileID) == AccountKey(tool: .agy, id: sha256Hex(utf8("agy:e@x.com"))))
+        #expect(Identity.agy(subject: nil, email: "E@x.com", refreshToken: "r").key == agy.key)
     }
 
     @Test func `REQ/F01-AC-1.c8 an incomplete identity is keyed by its refresh token fingerprint and never equals a complete one`() {
@@ -26,7 +27,7 @@ import ArgusCore
         #expect(incomplete.incompleteFingerprint == sha256Hex(utf8("test-refresh-1")))
         #expect(incomplete.key == "claude:incomplete:" + sha256Hex(utf8("test-refresh-1")))
         #expect(incomplete != Identity.claude(email: "a@b.com", organizationUuid: "org", refreshToken: "test-refresh-1"))
-        #expect(!Identity.agy(subject: nil, email: "a@b.com", refreshToken: "r").isComplete)
+        #expect(!Identity.agy(subject: "sub", email: nil, refreshToken: "r").isComplete)
         #expect(!Identity.codex(email: "a@b.com", accountID: "", refreshToken: "r").isComplete)
     }
 

@@ -101,6 +101,7 @@ public actor Vault {
             try Self.makeOwnerOnlyFolder(Self.folder(vaultURL, .default(tool)))
             for dir in folders(tool) { Self.settleStagedFiles(in: dir, tool: tool) }
         }
+        for dir in folders(.agy) { Self.rekeyAgyEntries(in: dir) }
     }
 
     /// The context's saved logins.
@@ -286,6 +287,31 @@ public actor Vault {
             } else {
                 unlink(staged.path)
             }
+        }
+    }
+
+    /// Moves agy entries saved under `agy:<sub>` to their email key: the new file is written and flushed first, then the
+    /// old file and its `.prev` are removed. An unreadable file at the new id is never overwritten.
+    private static func rekeyAgyEntries(in dir: URL) {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        for name in names where name.hasSuffix(".json") && !name.dropLast(5).contains(".") {
+            let old = dir.appending(path: name)
+            guard let data = try? Data(contentsOf: old), case .valid(let e) = validate(data, tool: .agy, id: String(name.dropLast(5))) else { continue }
+            let identity = Identity.agy(subject: e.identity.subject, email: e.identity.email, refreshToken: nil)
+            guard identity.isComplete, identity.key != e.identityKey else { continue }
+            let target = dir.appending(path: "\(identity.fileID).json")
+            switch (try? Data(contentsOf: target)).map({ validate($0, tool: .agy, id: identity.fileID) }) {
+            case .valid?: break
+            case .unreadable?: continue
+            case nil:
+                let moved = VaultEnvelope(v: e.v, tool: e.tool, identity: identity, identityKey: identity.key, label: e.label, plan: e.plan,
+                                          claudeAccount: e.claudeAccount, accountID: e.accountID, payload: e.payload, generation: e.generation,
+                                          capturedAt: e.capturedAt, origin: e.origin, kept: e.kept, clientId: e.clientId)
+                guard let encoded = try? encode(moved), let staged = writeStagedFile(encoded, besides: target),
+                      (try? commit(staged, to: target)) != nil else { continue }
+            }
+            try? FileManager.default.removeItem(at: old)
+            try? FileManager.default.removeItem(at: prev(old))
         }
     }
 

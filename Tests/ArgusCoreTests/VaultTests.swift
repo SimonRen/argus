@@ -200,6 +200,41 @@ fileprivate actor Log {
         #expect(current.payloadBytes == utf8("test-credential-2"))
     }
 
+    // MARK: agy re-key
+
+    /// Saves alice's agy login, then rewrites its file (and a `.prev`) the way it was stored under `agy:sub-1`.
+    private func legacyAgyEntry(_ box: TestSandbox) async throws -> (saved: VaultEnvelope, oldID: String, newID: String) {
+        let saved = try await Vault(supportRoot: box.supportRoot).save(.signedIn(login(.agy, clientID: OAuthClients.antigravityClientID)), origin: .kept)
+        let newID = sha256Hex(utf8("agy:alice@example.com")), oldID = sha256Hex(utf8("agy:sub-1"))
+        var json = try #require(JSONSerialization.jsonObject(with: try Data(contentsOf: fileURL(box, .agy, newID))) as? [String: Any])
+        json["identityKey"] = "agy:sub-1"
+        let legacy = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
+        try FileManager.default.removeItem(at: fileURL(box, .agy, newID))
+        try legacy.write(to: fileURL(box, .agy, oldID))
+        try legacy.write(to: fileURL(box, .agy, oldID).appendingPathExtension("prev"))
+        return (saved, oldID, newID)
+    }
+
+    @Test func `launch moves an agy entry saved under its sub to its email key, keeping everything else`() async throws {
+        let box = try TestSandbox(security: ScriptedSecurity([.timedOut]))
+        let (saved, _, newID) = try await legacyAgyEntry(box)
+        let vault = try Vault(supportRoot: box.supportRoot)
+        #expect(files(box, .agy) == ["\(newID).json"])
+        guard case .valid(let moved)? = await vault.entry(.default(.agy), id: newID) else { Issue.record("not moved"); return }
+        #expect(moved.identityKey == "agy:alice@example.com" && moved.identity.subject == "sub-1")
+        #expect(moved.payload == saved.payload && moved.generation == saved.generation)
+        #expect(moved.kept && moved.clientId == OAuthClients.antigravityClientID)
+    }
+
+    @Test func `the agy re-key never overwrites an unreadable file at the email id`() async throws {
+        let box = try TestSandbox(security: ScriptedSecurity([.timedOut]))
+        let (_, oldID, newID) = try await legacyAgyEntry(box)
+        try box.write("support/vault/agy/\(newID).json", "{")
+        _ = try Vault(supportRoot: box.supportRoot)
+        #expect(files(box, .agy) == ["\(oldID).json", "\(oldID).json.prev", "\(newID).json"].sorted())
+        #expect(try Data(contentsOf: fileURL(box, .agy, newID)) == utf8("{"))
+    }
+
     // MARK: F02-AC-2.c6
 
     @Test func `REQ/F02-AC-2.c6 the vault folder exists with mode 0700 and is excluded from backup`() throws {

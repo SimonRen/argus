@@ -254,14 +254,14 @@ fileprivate final class ConfigChangingSecurity: SecurityRunning, @unchecked Send
 
     // MARK: agy
 
-    @Test func `REQ/F01-AC-1.c3 agy identity is the id_token sub with email as label`() async throws {
+    @Test func `REQ/F01-AC-1.c3 agy identity is the id_token email, which is also the label`() async throws {
         let box = try TestSandbox()
         let idToken = testJWT(["sub": "sub-1", "email": "Carol@Example.com", "azp": "client-1", "aud": "aud-1"])
         let value = utf8(agyValue(agyJSON(idToken: idToken)))
         #expect(await box.keychain.write(service: "gemini", account: "antigravity", value: value) == .written)
         guard case .signedIn(let login) = await AgyTool(env: box.env).readLive() else { Issue.record("not signed in"); return }
         #expect(login.identity == .agy(subject: "sub-1", email: "carol@example.com", refreshToken: "test-refresh-1"))
-        #expect(login.identity.key == "agy:sub-1")
+        #expect(login.identity.key == "agy:carol@example.com")
         #expect(login.label == "carol@example.com")
         #expect(login.clientID == "client-1")
         #expect(login.plan == nil)
@@ -277,6 +277,18 @@ fileprivate final class ConfigChangingSecurity: SecurityRunning, @unchecked Send
         guard case .signedIn(let login) = await AgyTool(env: box.env).readLive() else { Issue.record("not signed in"); return }
         #expect(login.identity.subject == "sub-2")
         #expect(login.clientID == "aud-2")
+    }
+
+    @Test func `REQ/F01-AC-1.c3 agy 1.4.9's id_token_email without an id_token is the same account on agy's own client`() async throws {
+        let box = try TestSandbox()
+        let json = #"{"token":{"access_token":"test-access-1","token_type":"Bearer","refresh_token":"test-refresh-1","expiry":"2026-10-17T12:00:00Z","expires_in":3599},"auth_method":"consumer","id_token_email":"Carol@Example.com"}"#
+        #expect(await box.keychain.write(service: "gemini", account: "antigravity", value: utf8(agyValue(json))) == .written)
+        guard case .signedIn(let login) = await AgyTool(env: box.env).readLive() else { Issue.record("not signed in"); return }
+        #expect(login.identity.isComplete)
+        #expect(login.identity.key == Identity.agy(subject: "sub-1", email: "carol@example.com", refreshToken: nil).key)
+        #expect(login.label == "carol@example.com")
+        #expect(login.clientID == OAuthClients.antigravityClientID)
+        #expect(box.violations.isEmpty)
     }
 
     @Test func `REQ/F01-AC-1.c3 a malformed recognized envelope is unknown`() async throws {

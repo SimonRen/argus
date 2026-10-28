@@ -12,7 +12,7 @@ Binds: DEC-02, DEC-08, DEC-05, R-01, R-02, R-06, R-07, R-11, R-25, R-28, C-01, C
 |---|---|---|---|---|---|---|
 | FR-01.1 | WHEN Claude's live Keychain value and `~/.claude.json` `oauthAccount` are readable THEN identity = (lowercased `emailAddress`, `organizationUuid`), plan = `subscriptionType` | AC-1 | PRD story 1 | active | §2 | unit: fixture blob + config JSON |
 | FR-01.2 | WHEN Codex `auth.json` has `auth_mode` "chatgpt" THEN identity = (lowercased id_token `email`, `chatgpt_account_id`), plan = `chatgpt_plan_type` | AC-1 | PRD story 1 | active | §2 | unit: fixture id_token claims |
-| FR-01.3 | WHEN agy's Keychain value is a `go-keyring-base64:` envelope THEN identity = decoded id_token `sub` with `email` as label; a malformed recognized envelope → unknown | AC-1 | PRD story 1 | active | §2 | unit: clean and damaged envelopes |
+| FR-01.3 | WHEN agy's Keychain value is a `go-keyring-base64:` envelope THEN identity = lowercased email, from the decoded id_token `email` or else the top-level `id_token_email` (agy 1.4.9 stores no id_token), also the label; a malformed recognized envelope → unknown | AC-1 | PRD story 1 | active | §2 | unit: clean and damaged envelopes |
 | FR-01.4 | WHEN `security` returns rc 44 THEN the tool shows not signed in; WHEN it returns any other non-zero rc or exceeds 20 s THEN the live state is unknown, switching that tool is disabled, and the notice says retry | AC-1 | PRD §Read failures | active | §2 | unit with stubbed runner: rc 44, rc 51, timeout |
 | FR-01.5 | WHEN `security -w` output ends in `\n` THEN exactly one trailing newline is stripped before parsing | AC-1 | — design | active | §2 | unit: value with and without newline, value with internal newline |
 | FR-01.6 | WHEN Claude's live item exists with empty `accessToken` and `refreshToken` THEN Claude shows signed out (wiped) | AC-1 | — design | active | §2 | unit: wiped blob |
@@ -39,7 +39,7 @@ Binds: DEC-02, DEC-08, DEC-09, DEC-04, R-01, R-02, R-06, R-07, R-11, R-24, R-25,
 | FR-02.6 | WHEN the app launches THEN the vault folder exists with mode 0700 and `isExcludedFromBackup` is true | AC-2 | PRD §Secrets | active | §3 | unit on a temp support dir |
 | FR-02.7 | WHEN a vault file fails validation THEN the account shows "unreadable vault entry" and no write targets that id | AC-2 | — design | active | §3 | unit: truncated JSON, wrong hash |
 | FR-02.8 | WHEN a second app instance starts THEN it exits because `vault/.lock` is held | AC-2 | — design | active | §3 | unit: two flock attempts |
-| FR-02.9 | WHEN an agy login is saved THEN its id_token `azp` is stored as `clientId` | AC-2 | — design | active | §5 | unit |
+| FR-02.9 | WHEN an agy login is saved THEN its id_token `azp` is stored as `clientId`, or the embedded Antigravity client when it has no id_token | AC-2 | — design | active | §5 | unit |
 | FR-02.10 | WHEN any error is logged or shown THEN no token, refresh token or credential value appears in it | AC-2 | PRD AC (no secrets) | active | §3 | unit: error descriptions over fixture secrets contain none of them |
 
 ## F-03 — Switch a tool's live account   (active · PRD story 4)

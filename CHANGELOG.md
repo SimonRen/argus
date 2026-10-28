@@ -6,6 +6,10 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+### Fixed
+
+- An Antigravity CLI login saved by agy 1.4.9 or later no longer shows as an unsaved "Unknown account" beside its saved entry. Argus now recognises agy accounts by email, and moves existing saved agy logins over the first time it starts.
+
 ## [0.6.1] - 2026-10-22
 
 ### Added

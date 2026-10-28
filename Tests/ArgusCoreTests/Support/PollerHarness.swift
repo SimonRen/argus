@@ -97,7 +97,7 @@ func testLogin(_ tool: Tool, _ tag: String, complete: Bool = true, expiry: Date 
     let identity: Identity = switch tool {
     case .claude: .claude(email: "\(tag)@example.com", organizationUuid: complete ? "org-\(tag)" : nil, refreshToken: c.tokens.refreshToken)
     case .codex: .codex(email: "\(tag)@example.com", accountID: complete ? "acct-\(tag)" : nil, refreshToken: c.tokens.refreshToken)
-    case .agy: .agy(subject: complete ? "sub-\(tag)" : nil, email: "\(tag)@example.com", refreshToken: c.tokens.refreshToken)
+    case .agy: .agy(subject: "sub-\(tag)", email: complete ? "\(tag)@example.com" : nil, refreshToken: c.tokens.refreshToken)
     }
     return LiveLogin(identity: identity, plan: tool == .agy ? nil : "pro", label: "\(tag)@example.com", bytes: c.bytes, tokens: c.tokens,
                      clientID: clientID, claudeAccount: tool == .claude ? Data(#"{"emailAddress":"\#(tag)@example.com"}"#.utf8) : nil,

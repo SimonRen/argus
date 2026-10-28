@@ -21,7 +21,7 @@ public struct Identity: Codable, Sendable, Hashable {
     public let email: String?
     /// Claude `organizationUuid` · Codex `chatgpt_account_id` · agy nil.
     public let scope: String?
-    /// agy id_token `sub` · otherwise nil.
+    /// agy id_token `sub` when it has one (not part of the key) · otherwise nil.
     public let subject: String?
     /// `sha256Hex` of the refresh token's UTF-8, set only when incomplete.
     public let incompleteFingerprint: String?
@@ -33,7 +33,7 @@ public struct Identity: Codable, Sendable, Hashable {
         self.subject = subject.flatMap { $0.isEmpty ? nil : $0 }
         let complete = switch tool {
         case .claude, .codex: self.email != nil && self.scope != nil
-        case .agy: self.subject != nil
+        case .agy: self.email != nil
         }
         self.incompleteFingerprint = complete ? nil : sha256Hex(Data((refreshToken ?? "").utf8))
     }
@@ -44,7 +44,8 @@ public struct Identity: Codable, Sendable, Hashable {
         if let incompleteFingerprint { return "\(tool.rawValue):incomplete:\(incompleteFingerprint)" }
         return switch tool {
         case .claude, .codex: "\(tool.rawValue):\(email ?? ""):\(scope ?? "")"
-        case .agy: "agy:\(subject ?? "")"
+        // By email: agy 1.4.9 stores `id_token_email` in place of the id_token, so a live login may carry no `sub`.
+        case .agy: "agy:\(email ?? "")"
         }
     }
 

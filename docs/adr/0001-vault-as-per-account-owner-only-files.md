@@ -20,7 +20,7 @@ Keychain storage was the obvious choice and was rejected by the owner: an ad-hoc
 ## Consequences
 
 - Envelope schema v1: `{v, tool, identity{…}, identityKey, payload(base64), generation, capturedAt, origin("save"|"sync-back"|"kept"|"renewal"), kept(bool), clientId?(agy azp)}`.
-- Canonical identity strings: `claude:<email lowercased>:<organizationUuid>`, `codex:<email lowercased>:<chatgpt_account_id>`, `agy:<id_token sub>`; incomplete identity: `<tool>:incomplete:<sha256(refresh token)>`.
+- Canonical identity strings: `claude:<email lowercased>:<organizationUuid>`, `codex:<email lowercased>:<chatgpt_account_id>`, `agy:<email lowercased>` (id_token `email`, or `id_token_email`, which agy 1.4.9 stores in place of the id_token; until 2026-10-28 it was `agy:<id_token sub>`, and launch moves such files to the email key); incomplete identity: `<tool>:incomplete:<sha256(refresh token)>`.
 - Load validation: JSON parses, `v == 1`, tool matches folder, SHA-256 of `identityKey` equals the file name, payload decodes; any failure → account shown as an unreadable vault entry, write path refuses that id.
 - `.prev` is forensic only and is never restored automatically — its refresh token is almost certainly spent.
 - Launch takes an exclusive non-blocking `flock` on `vault/.lock` for the process lifetime; a second instance exits.
