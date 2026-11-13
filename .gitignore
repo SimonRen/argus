@@ -16,5 +16,8 @@ refs/
 
 # Local agent and editor state.
 .jarvis/
-.claude/
+# The global ignore drops .claude/; only its skills are shared.
+!.claude/
+.claude/*
+!.claude/skills/
 .DS_Store
