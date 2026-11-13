@@ -20,5 +20,11 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/SimonRen/argus/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>X0xNGoUSjyXz8Agso66yoraP8fLwCiU4GvJTuF3N4Gw=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 </dict>
 </plist>

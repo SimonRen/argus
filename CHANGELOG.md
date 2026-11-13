@@ -6,6 +6,10 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+### Added
+
+- Argus updates itself. It checks for a new release once a day and asks before installing it; the manager's toolbar has Check for Updates… and a switch for the daily check. Installs of 0.6.2 or earlier need this one update by hand.
+
 ## [0.6.2] - 2026-10-28
 
 ### Fixed

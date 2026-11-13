@@ -53,6 +53,7 @@ struct ManagerView: View {
     let commands: AccountCommands
     let preferences: MenuBarPreferences
     let loginItem: LoginItemController
+    let updater: Updater
 
     @State private var selected = ToolContext.default(.claude)
     @State private var saveBanner: [ToolContext: (text: String, problem: Bool)] = [:]
@@ -124,6 +125,15 @@ struct ManagerView: View {
                     .toggleStyle(.switch).labelsHidden().controlSize(.mini).disabled(loginItem.isChanging)
             }
             .padding(.horizontal, 6).fixedSize()
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Button("Check for Updates…") { updater.checkForUpdates() }
+                Toggle("Check Automatically", isOn: Binding(get: { updater.automaticallyChecks }, set: { updater.automaticallyChecks = $0 }))
+            } label: {
+                Image(systemName: "arrow.down.circle")
+            }
+            .help("Updates").accessibilityLabel("Updates")
         }
     }
 

@@ -24,6 +24,7 @@ SWIFT_FLAGS ?=
 SDK_FLAGS := -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc "$(shell xcrun --show-sdk-path)"
 
 APP := $(OUT)/Argus.app
+SPARKLE = $(APP)/Contents/Frameworks/Sparkle.framework
 INSTALLED := $(HOME)/Applications/Argus.app
 PLIST := Resources/Info.plist
 # The version lives in VERSION (Semantic Versioning); the build number is the commit count, so it only grows on main.
@@ -43,8 +44,16 @@ build:
 	cp "$(PLIST)" "$(APP)/Contents/Info.plist"
 	plutil -replace CFBundleShortVersionString -string "$(APP_VERSION)" "$(APP)/Contents/Info.plist"
 	plutil -replace CFBundleVersion -string "$(BUILD_NUMBER)" "$(APP)/Contents/Info.plist"
+	# Sparkle, the updater. Argus is not sandboxed, so the framework's XPC services are left out; its helpers are
+	# signed inside out, each with the app's identity and flags, before the app itself.
+	ditto "$(BIN)/Sparkle.framework" "$(SPARKLE)"
+	rm -rf "$(SPARKLE)/XPCServices" "$(SPARKLE)/Versions/B/XPCServices"
 	xattr -cr "$(APP)"
+	codesign --force --sign "$(SIGN)" $(CODESIGN_FLAGS) "$(SPARKLE)/Versions/B/Autoupdate"
+	codesign --force --sign "$(SIGN)" $(CODESIGN_FLAGS) "$(SPARKLE)/Versions/B/Updater.app"
+	codesign --force --sign "$(SIGN)" $(CODESIGN_FLAGS) "$(SPARKLE)"
 	codesign --force --sign "$(SIGN)" $(CODESIGN_FLAGS) "$(APP)"
+	codesign --verify --deep --strict "$(APP)"
 
 # The single-instance lock would otherwise keep the stale copy and quit the fresh one.
 dev: build

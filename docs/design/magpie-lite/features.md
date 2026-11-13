@@ -183,6 +183,7 @@ Binds: DEC-02, DEC-08, R-23, R-25, C-01, C-02, C-03, C-04, C-05
 |---|---|---|---|---|---|---|
 | FR-08.1 | WHEN the toggle changes THEN it moves at once and stays disabled while `SMAppService.mainApp` is registered or unregistered off the main thread, then settles on `.status`; the toggle reflects `.status` when the manager opens | AC-8 | PRD story 10 | active | §6 | unit on LoginItemController; manual run from `~/Applications/MagpieLite.app` |
 | FR-08.2 | WHEN registration throws or the status requires approval THEN the toggle reverts and the status message is shown | AC-8 | — design | active | §6 | manual run |
+| FR-08.3 | WHEN a day has passed since the last check (and the daily check is on) or Check for Updates… is chosen in the manager's toolbar THEN Sparkle reads the latest GitHub release's `appcast.xml`, accepts an update only if its DMG is signed with the key in `SUPublicEDKey`, and asks before installing | — | owner request | active | §6 | bundle test (framework, feed, key present); manual check against a local feed |
 
 ## F-09 — Tool contexts   (active · owner request 2026-10-19)
 Candidate scope: create `Sources/ArgusCore/ToolContexts.swift`; modify `ToolEnvironment.swift`, `Identity.swift`, `Tools/ClaudeTool.swift`, `Tools/CodexTool.swift`, `ClaudeLocks.swift`, `Switch.swift`, `Renewal.swift`, `AppState.swift`, `Poller.swift`, `Commands.swift`, `RowModel.swift`, `ManagerModel.swift`, `Sources/Argus/PopoverView.swift`, `ManagerView.swift`, `AppDelegate.swift`; create test `Tests/ArgusCoreTests/ContextTests.swift`

@@ -105,8 +105,15 @@ struct BundleTests {
         let buildNumber = plist["CFBundleVersion"] as? String
         #expect(buildNumber.flatMap(Int.init).map { $0 >= 0 } == true, "CFBundleVersion is not a number: \(buildNumber ?? "missing")")
 
-        // The signature verifies.
-        let verify = try await run("/usr/bin/codesign", ["--verify", app.path], in: root, logDir: logs)
+        // The updater: Sparkle embedded without its XPC services, and pointed at the GitHub release feed.
+        let sparkle = contents.appendingPathComponent("Frameworks/Sparkle.framework/Versions/B")
+        #expect(fm.isExecutableFile(atPath: sparkle.appendingPathComponent("Sparkle").path), "Sparkle.framework is not embedded")
+        #expect(!fm.fileExists(atPath: sparkle.appendingPathComponent("XPCServices").path), "Sparkle's XPC services are embedded")
+        #expect((plist["SUFeedURL"] as? String) == "https://github.com/SimonRen/argus/releases/latest/download/appcast.xml")
+        #expect((plist["SUPublicEDKey"] as? String)?.isEmpty == false, "SUPublicEDKey is missing")
+
+        // The signature verifies, the embedded framework's included.
+        let verify = try await run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path], in: root, logDir: logs)
         #expect(verify.status == 0, "codesign --verify exited \(verify.status):\n\(tail(verify.output))")
 
         // The binary records the SDK it was built with, not the deployment target: macOS 26 runs an app that says

@@ -70,6 +70,10 @@ codesign -dv --verbose=2 "$APP" 2>&1 | grep -E "^(Authority|TeamIdentifier|Ident
 codesign -dv "$APP" 2>&1 | grep "flags=.*runtime" >/dev/null || fail "the hardened runtime is not on."
 STAMPED="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 [[ "$STAMPED" == "$VERSION" ]] || fail "the bundle says $STAMPED, not $VERSION."
+# Sparkle accepts only updates signed by the private half of SUPublicEDKey, kept in the login keychain as account `argus`.
+SPARKLE_BIN=".build/artifacts/sparkle/Sparkle/bin"
+BUNDLED_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/Info.plist")"
+[[ "$BUNDLED_KEY" == "$("$SPARKLE_BIN/generate_keys" --account argus -p)" ]] || fail "SUPublicEDKey in the bundle is not the public half of the keychain's \`argus\` update key."
 # Notarization rejects a binary carrying get-task-allow.
 if codesign -d --entitlements - "$APP" 2>/dev/null | grep "get-task-allow" >/dev/null; then
   fail "the binary carries com.apple.security.get-task-allow; notarization would reject it."

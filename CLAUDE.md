@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Argus is a macOS 15+ menubar app (Swift 6, SwiftPM, no package dependencies, Apple silicon) that keeps a vault of logins for Claude Code, Codex and Antigravity CLI (agy). It switches each tool's live login in place and polls every saved account's 5-hour and 7-day allowance. The app was renamed from magpie-lite, which is why the repo folder, `magpie-lite-PRD.md` and `docs/design/magpie-lite/` still use the old name.
+Argus is a macOS 15+ menubar app (Swift 6, SwiftPM, Apple silicon; one package dependency, Sparkle, in the app target only) that keeps a vault of logins for Claude Code, Codex and Antigravity CLI (agy). It switches each tool's live login in place and polls every saved account's 5-hour and 7-day allowance. The app was renamed from magpie-lite, which is why the repo folder, `magpie-lite-PRD.md` and `docs/design/magpie-lite/` still use the old name.
 
 ## Commands
 
@@ -63,5 +63,6 @@ Key mechanisms, each spread across several files:
 
 - `VERSION` holds the Semantic Version. `make build` stamps it into the bundle's `CFBundleShortVersionString`, and `CFBundleVersion` is `git rev-list --count HEAD`. `Resources/Info.plist` has no version keys.
 - To release: `make bump VERSION=x.y.z` (writes `VERSION` and rolls `[Unreleased]` into `[x.y.z] - <date>`), then commit, then `make release`. The release builds an arm64 bundle signed with the Developer ID and hardened runtime, notarizes and staples it, builds a DMG, and tags `vX.Y.Z`. After that, push and run `make publish`, which pushes the tag and creates the GitHub release with the changelog section as notes.
+- Updates: Sparkle reads `SUFeedURL`, the latest GitHub release's `appcast.xml`, which `make publish` writes and uploads beside the DMG it EdDSA-signs. The update key's private half is in the signing Mac's login keychain as account `argus` (`.build/artifacts/sparkle/Sparkle/bin/generate_keys --account argus -p` prints the public half, which must equal `SUPublicEDKey` in `Resources/Info.plist`; `make release` checks). `make build` embeds `Sparkle.framework` without its XPC services and signs its helpers before the app.
 - `make release` runs on the signing Mac only, never in CI. It needs the Developer ID identity in the login keychain and the notarytool profile `notary`, and it refuses a dirty tree. Its build step reads the working tree, so don't edit sources while a release build is running.
 - `scripts/*.sh` run under `set -euo pipefail`. Don't pipe into `grep -q`: its early exit kills the writer with SIGPIPE and fails the pipeline even on a match. Use `grep … >/dev/null` instead.

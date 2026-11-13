@@ -79,8 +79,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.commands = commands
         let preferences = MenuBarPreferences(defaults: .standard)
         let loginItem = LoginItemController(service: SMAppServiceLoginItem())
+        let updater = Updater()
         manager = ManagerWindowController(makeView: {
-            AnyView(ManagerView(state: state, commands: commands, preferences: preferences, loginItem: loginItem))
+            AnyView(ManagerView(state: state, commands: commands, preferences: preferences, loginItem: loginItem, updater: updater))
         }, onClose: { commands.closeUndo() })
         let statusItem = StatusItemController(state: state, preferences: preferences)
         let screen = PopoverScreen()

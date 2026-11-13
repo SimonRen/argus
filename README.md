@@ -10,7 +10,7 @@ Named after Argus Panoptes, the hundred-eyed watchman of Greek myth.
 | --- | --- |
 | Platform | macOS 15 or later, Apple silicon; menubar accessory (`LSUIElement`) |
 | Tools | Claude Code, Codex CLI, Antigravity CLI |
-| Source | Swift 6, SwiftUI + AppKit, no package dependencies |
+| Source | Swift 6, SwiftUI + AppKit; [Sparkle](https://sparkle-project.org) for updates |
 | Spec | [`docs/design/magpie-lite/`](docs/design/magpie-lite/) · decisions in [`docs/adr/`](docs/adr/) |
 
 ## Features
@@ -26,6 +26,8 @@ Named after Argus Panoptes, the hundred-eyed watchman of Greek myth.
   - Codex: `auth.json`; a running Codex app-server is restarted so attached sessions move over.
   - Antigravity CLI: its Keychain item and token file, from its next session.
   The outgoing login is saved back first, and a failed switch puts every live store back.
+- **Updates** — checks the latest GitHub release once a day and asks before installing (Sparkle); Check for Updates…
+  is in the manager's toolbar.
 - **Background allowance polling** — saved accounts' tokens are renewed by the app; requests go one at a time per
   vendor, with per-account backoff after a 429 and minimum gaps that hold across restarts.
 
