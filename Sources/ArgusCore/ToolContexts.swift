@@ -25,11 +25,14 @@ public struct ToolContext: Codable, Sendable, Hashable {
     /// The variable to export for this context, e.g. `CLAUDE_CONFIG_DIR=/Users/me/.claude-work`; nil for the default.
     public var assignment: String? {
         guard let path else { return nil }
-        return (tool == .codex ? "CODEX_HOME=" : "CLAUDE_CONFIG_DIR=") + path
+        return "\(tool.contextVariable)=\(path)"
     }
 }
 
 extension Tool {
     /// Claude Code and Codex can be pointed at another folder; agy has no setting for it.
     public var supportsContexts: Bool { self != .agy }
+
+    /// The variable that points the tool at a context's folder.
+    public var contextVariable: String { self == .codex ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR" }
 }

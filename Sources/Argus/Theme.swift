@@ -39,6 +39,10 @@ struct Theme {
     var soft: Color { pick(.black.opacity(0.04), .white.opacity(0.06)) }
     var flashBg: Color { pick(Color(hex: 0x2B8A78).opacity(0.12), Color(red: 80 / 255, green: 200 / 255, blue: 170 / 255).opacity(0.14)) }
     var flashText: Color { pick(Color(hex: 0x1E6B5D), Color(hex: 0x8FE0CC)) }
+    /// Fill behind white text (Switch, Add context, an unsaved login's Save): dark `ok` under white is about 2.7:1, this is above 4.5:1.
+    var action: Color { pick(Color(hex: 0x2F6FE0), Color(hex: 0x2A66D9)) }
+    /// The manager's meter fill while a window has plenty left: neutral, so colour means "look here".
+    var meter: Color { pick(Color(hex: 0x4A4A50), Color(hex: 0xD8D8DE)) }
 
     func bar(_ band: Band) -> Color {
         switch band {
@@ -46,6 +50,26 @@ struct Theme {
         case .warn: warn
         case .low: low
         case .empty: track
+        }
+    }
+
+    /// Manager meters: neutral until a limit is close.
+    func meterBar(_ band: Band) -> Color {
+        switch band {
+        case .ok: meter
+        case .warn: warn
+        case .low: low
+        case .empty: track
+        }
+    }
+
+    /// Manager percentages, beside their meters and in the sidebar.
+    func meterText(_ band: Band) -> Color {
+        switch band {
+        case .ok: text
+        case .warn: warnText
+        case .low: barLow
+        case .empty: ter
         }
     }
 

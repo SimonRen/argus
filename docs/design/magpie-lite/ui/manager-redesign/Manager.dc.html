@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Argus manager window</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button{font:inherit;border:0;padding:0;margin:0;background:none;color:inherit;cursor:pointer}
+a{color:#7fb0ff}a:hover{color:#a9c9ff}
+</style>
+</helmet>
+<div style="width: 1120px; height: 680px; box-sizing: border-box; display: flex; background: #1b1b1e; color: #f3f3f5; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, sans-serif; font-size: 13px; line-height: 1.35; font-variant-numeric: tabular-nums; overflow: hidden">
+
+<nav aria-label="Tools and contexts" style="width: 252px; flex: none; box-sizing: border-box; background: #222226; border-right: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; padding: 0 10px 12px">
+<div aria-hidden="true" style="height: 52px; display: flex; align-items: center; gap: 8px; padding-left: 10px">
+<div style="width: 12px; height: 12px; border-radius: 50%; background: #ff5f57"></div>
+<div style="width: 12px; height: 12px; border-radius: 50%; background: #febc2e"></div>
+<div style="width: 12px; height: 12px; border-radius: 50%; background: #28c840"></div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 18px">
+
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 6px 0 10px">
+<div aria-hidden="true" style="width: 18px; height: 18px; border-radius: 5px; background: rgba(224,138,109,0.18); color: #eb9c80; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center">C</div>
+<div style="flex: 1; font-size: 12px; font-weight: 600; color: #b0b0b8">Claude Code</div>
+<button aria-label="Add a Claude Code context" style="width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #b0b0b8">
+<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+</button>
+</div>
+<button aria-current="page" style="display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 10px; border-radius: 8px; background: rgba(255,255,255,0.09); text-align: left">
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+<div style="font-size: 13px; font-weight: 600">Default</div>
+<div style="font-size: 11.5px; color: #b0b0b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">mulror@icloud.com</div>
+</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 1px">
+<div style="font-size: 13px; font-weight: 600">47%</div>
+<div style="font-size: 10.5px; color: #b0b0b8">Fable 7d</div>
+</div>
+</button>
+<button style="display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 10px; border-radius: 8px; text-align: left">
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+<div style="font-size: 13px; font-weight: 500">tes</div>
+<div style="font-size: 11.5px; color: #9a9aa3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">hanlin.liang@targetdigitalventures.com</div>
+</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 1px">
+<div style="font-size: 13px; font-weight: 600; color: #ff8a7a">100%</div>
+<div style="font-size: 10.5px; color: #9a9aa3">5h</div>
+</div>
+</button>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 6px 0 10px">
+<div aria-hidden="true" style="width: 18px; height: 18px; border-radius: 5px; background: rgba(157,155,255,0.18); color: #b3b1ff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center">X</div>
+<div style="flex: 1; font-size: 12px; font-weight: 600; color: #b0b0b8">Codex</div>
+<button aria-label="Add a Codex context" style="width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #b0b0b8">
+<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+</button>
+</div>
+<button style="display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 10px; border-radius: 8px; text-align: left">
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+<div style="font-size: 13px; font-weight: 500">Default</div>
+<div style="font-size: 11.5px; color: #9a9aa3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">it-support@claymorel…</div>
+</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 1px">
+<div style="font-size: 13px; font-weight: 600; color: #f0b34a">64%</div>
+<div style="font-size: 10.5px; color: #9a9aa3">7d</div>
+</div>
+</button>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 6px 0 10px">
+<div aria-hidden="true" style="width: 18px; height: 18px; border-radius: 5px; background: rgba(92,200,184,0.18); color: #6fd6c6; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center">A</div>
+<div style="flex: 1; font-size: 12px; font-weight: 600; color: #b0b0b8">Antigravity CLI</div>
+</div>
+<button style="display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 10px; border-radius: 8px; text-align: left">
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+<div style="font-size: 13px; font-weight: 500">Default</div>
+<div style="font-size: 11.5px; color: #9a9aa3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">jmulro@gmail.com</div>
+</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 1px">
+<div style="font-size: 13px; font-weight: 600">2%</div>
+<div style="font-size: 10.5px; color: #9a9aa3">7d</div>
+</div>
+</button>
+</div>
+
+</div>
+</nav>
+
+<main style="flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative">
+
+<div style="height: 52px; flex: none; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 16px 0 28px; border-bottom: 1px solid rgba(255,255,255,0.08)">
+<div style="font-size: 13px; font-weight: 600">Argus</div>
+<div style="flex: 1; font-size: 12px; color: #9a9aa3">Live updated 3 min ago</div>
+<button style="height: 28px; padding: 0 10px; border-radius: 7px; display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: #d8d8de; background: rgba(255,255,255,0.07)">
+<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"></path><path d="M21 3v5h-5"></path></svg>
+<span>Refresh</span>
+</button>
+<button aria-label="Settings" style="width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #d8d8de; background: rgba(255,255,255,0.07)">
+<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h10M20 18h0"></path><circle cx="15" cy="6" r="2.5"></circle><circle cx="9" cy="12" r="2.5"></circle><circle cx="17" cy="18" r="2.5"></circle></svg>
+</button>
+</div>
+
+<div style="flex: 1; box-sizing: border-box; padding: 28px; display: flex; flex-direction: column; gap: 26px">
+
+<header style="display: flex; align-items: center; gap: 14px">
+<div aria-hidden="true" style="width: 40px; height: 40px; border-radius: 10px; background: rgba(224,138,109,0.18); color: #eb9c80; font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center">C</div>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+<div style="display: flex; align-items: center; gap: 10px">
+<h1 style="margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -0.01em">Claude Code</h1>
+<div style="font-size: 11.5px; font-weight: 600; color: #d8d8de; padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,0.09)">Default</div>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #b0b0b8">
+<span>Signed in as mulror@icloud.com</span>
+<span aria-hidden="true" style="color: #9a9aa3">·</span>
+<span style="font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 11.5px; color: #9a9aa3">CLAUDE_CONFIG_DIR unset</span>
+</div>
+</div>
+<button style="height: 32px; padding: 0 14px; border-radius: 8px; font-size: 13px; font-weight: 600; color: #f3f3f5; background: rgba(255,255,255,0.10)">Save current login</button>
+</header>
+
+<section aria-label="Accounts" style="display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; background: #232327; overflow: hidden">
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 132px; column-gap: 28px; align-items: center; height: 36px; padding: 0 20px; font-size: 11.5px; font-weight: 600; color: #9a9aa3; border-bottom: 1px solid rgba(255,255,255,0.08)">
+<div>Account</div>
+<div>5-hour used</div>
+<div>7-day used</div>
+<div>Fable 7-day used</div>
+<div></div>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 132px; column-gap: 28px; align-items: center; height: 72px; padding: 0 20px; background: rgba(255,255,255,0.04); border-bottom: 1px solid rgba(255,255,255,0.08)">
+<div style="min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<div style="font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">mulror@icloud.com</div>
+<div style="font-size: 12px; color: #9a9aa3">Max</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 7px">
+<div style="display: flex; align-items: baseline; justify-content: space-between">
+<div style="font-size: 15px; font-weight: 600; color: #9a9aa3">—</div>
+<div style="font-size: 11.5px; color: #9a9aa3">none</div>
+</div>
+<div aria-hidden="true" style="height: 4px; border-radius: 2px; background: rgba(255,255,255,0.10)"></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 7px">
+<div style="display: flex; align-items: baseline; justify-content: space-between">
+<div style="font-size: 15px; font-weight: 600">41%</div>
+<div style="font-size: 11.5px; color: #9a9aa3">5d 10h</div>
+</div>
+<div aria-hidden="true" style="height: 4px; border-radius: 2px; background: rgba(255,255,255,0.10)"><div style="width: 41%; height: 100%; border-radius: 2px; background: #d8d8de"></div></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 7px">
+<div style="display: flex; align-items: baseline; justify-content: space-between">
+<div style="font-size: 15px; font-weight: 600">47%</div>
+<div style="font-size: 11.5px; color: #9a9aa3">5d 10h</div>
+</div>
+<div aria-hidden="true" style="height: 4px; border-radius: 2px; background: rgba(255,255,255,0.10)"><div style="width: 47%; height: 100%; border-radius: 2px; background: #d8d8de"></div></div>
+</div>
+<div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px">
+<div style="display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: rgba(91,155,255,0.18); font-size: 12.5px; font-weight: 600; color: #a3c6ff">
+<div aria-hidden="true" style="width: 6px; height: 6px; border-radius: 50%; background: #a3c6ff"></div>
+<span>Live</span>
+</div>
+<button aria-label="More actions for mulror@icloud.com" style="width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #b0b0b8">
+<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
+</button>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 132px; column-gap: 28px; align-items: center; height: 72px; padding: 0 20px; border-bottom: 1px solid rgba(255,255,255,0.08)">
+<div style="min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<div style="font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">jmulro@gmail.com</div>
+<div style="font-size: 12px; color: #9a9aa3">Max</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 7px">
+<div style="display: flex; align-items: baseline; justify-content: space-between">
+<div style="font-size: 15px; font-weight: 600; color: #9a9aa3">—</div>
+<div style="font-size: 11.5px; color: #9a9aa3">none</div>
+</div>
+<div aria-hidden="true" style="height: 4px; border-radius: 2px; background: rgba(255,255,255,0.10)"></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 7px">
+<div style="display: flex; align-items: baseline; justify-content: space-between">
+<div style="font-size: 15px; font-weight: 600">12%</div>
+<div style="font-size: 11.5px; color: #9a9aa3">5d 22h</div>
+</div>
+<div aria-hidden="true" style="height: 4px; border-radius: 2px; background: rgba(255,255,255,0.10)"><div style="width: 12%; height: 100%; border-radius: 2px; background: #d8d8de"></div></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 7px">
+<div style="display: flex; align-items: baseline; justify-content: space-between">
+<div style="font-size: 15px; font-weight: 600">7%</div>
+<div style="font-size: 11.5px; color: #9a9aa3">5d 22h</div>
+</div>
+<div aria-hidden="true" style="height: 4px; border-radius: 2px; background: rgba(255,255,255,0.10)"><div style="width: 7%; height: 100%; border-radius: 2px; background: #d8d8de"></div></div>
+</div>
+<div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px">
+<button style="height: 28px; padding: 0 14px; border-radius: 7px; font-size: 12.5px; font-weight: 600; color: #ffffff; background: #2a66d9">Switch</button>
+<button aria-label="More actions for jmulro@gmail.com" style="width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #b0b0b8">
+<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
+</button>
+</div>
+</div>
+
+<div style="display: flex; align-items: center; height: 42px; padding: 0 20px; font-size: 12.5px; color: #9a9aa3">Sign in with Claude Code as usual, then choose Save current login to keep it here.</div>
+</section>
+
+<section aria-label="Display" style="display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 12px; font-weight: 600; color: #9a9aa3">Show this context in</h2>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; background: #232327">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 48px; padding: 0 16px 0 20px; border-right: 1px solid rgba(255,255,255,0.08)">
+<div id="lbl-menubar" style="font-size: 13px; font-weight: 500">Menu bar</div>
+<button role="switch" aria-checked="true" aria-labelledby="lbl-menubar" style="width: 36px; height: 22px; border-radius: 11px; background: #2a66d9; display: flex; align-items: center; justify-content: flex-end; padding: 2px; box-sizing: border-box"><div style="width: 18px; height: 18px; border-radius: 50%; background: #ffffff"></div></button>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 48px; padding: 0 16px 0 20px; border-right: 1px solid rgba(255,255,255,0.08)">
+<div id="lbl-5h" style="font-size: 13px; font-weight: 500">5-hour in menu bar</div>
+<button role="switch" aria-checked="false" aria-labelledby="lbl-5h" style="width: 36px; height: 22px; border-radius: 11px; background: rgba(255,255,255,0.22); display: flex; align-items: center; justify-content: flex-start; padding: 2px; box-sizing: border-box"><div style="width: 18px; height: 18px; border-radius: 50%; background: #ffffff"></div></button>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 48px; padding: 0 16px 0 20px">
+<div id="lbl-popover" style="font-size: 13px; font-weight: 500">Popover</div>
+<button role="switch" aria-checked="true" aria-labelledby="lbl-popover" style="width: 36px; height: 22px; border-radius: 11px; background: #2a66d9; display: flex; align-items: center; justify-content: flex-end; padding: 2px; box-sizing: border-box"><div style="width: 18px; height: 18px; border-radius: 50%; background: #ffffff"></div></button>
+</div>
+</div>
+</section>
+
+</div>
+
+<div role="status" style="position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 10px; background: #323238; border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 8px 24px rgba(0,0,0,0.4); font-size: 12.5px; font-weight: 500; white-space: nowrap">
+<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8fe0cc" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+<span>Saved login updated for jmulro@gmail.com</span>
+</div>
+
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1120,"height":680}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

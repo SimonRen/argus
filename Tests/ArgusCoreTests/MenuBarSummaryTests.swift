@@ -71,11 +71,16 @@ fileprivate func value(_ text: String, _ low: Bool = false) -> MenuBarValue { Me
         #expect(off.segments.first?.fiveHour == nil)
     }
 
-    @Test func `the manager sidebar still shows the live account's 5 h and 7 d`() {
-        let row = ManagerSidebarRow.build(snapshot(.claude, groups: [group("All models", 62, 40), group("Fable", nil, 28)]), isShown: true)
-        #expect(row.fiveHour == value("38%") && row.sevenDay == value("72%"))
-        let signedOut = ManagerSidebarRow.build(snapshot(.codex, groups: nil, signedIn: false), isShown: true)
-        #expect(signedOut.fiveHour == value("—") && signedOut.sevenDay == value("—"))
+    @Test func `the manager sidebar shows the live account's window with the least left`() {
+        let row = ManagerSidebarRow.build(snapshot(.claude, groups: [group("All models", 62, 40), group("Fable", nil, 28)]))
+        #expect(row.tightest?.percentText == "72%" && row.tightest?.label == "Fable 7d" && row.tightest?.band == .warn)
+        let tie = ManagerSidebarRow.build(snapshot(.claude, groups: [group("All models", 30, 30)]))
+        #expect(tie.tightest?.label == "5h")
+        // agy's Claude and GPT groups are left out, as in the menubar.
+        let agy = ManagerSidebarRow.build(snapshot(.agy, groups: [group("Gemini", 80, 60), group("Claude", 5, 5)]))
+        #expect(agy.tightest?.percentText == "40%" && agy.tightest?.label == "7d")
+        let signedOut = ManagerSidebarRow.build(snapshot(.codex, groups: nil, signedIn: false))
+        #expect(signedOut.tightest == nil)
     }
 
     @Test func `REQ/F05-AC-5.c2 values round to whole percents`() {

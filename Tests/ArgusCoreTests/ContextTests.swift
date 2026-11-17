@@ -197,6 +197,24 @@ fileprivate let start = Date(timeIntervalSince1970: 1_790_000_000)
         #expect(work.assignment == "CLAUDE_CONFIG_DIR=/tmp/w" && ToolContext.default(.claude).assignment == nil)
     }
 
+    @Test func `REQ/F09-AC-9.c5 a context page warns only when its login needs attention`() {
+        let work = ToolContext(tool: .claude, path: "/tmp/w", name: "Work")
+        let a = testLogin(.claude, "a")
+        #expect(ManagerText.contextWarning(nil, context: work, sharedWith: nil) == nil)
+        #expect(ManagerText.contextWarning(.signedIn(a), context: work, sharedWith: nil) == nil)
+        #expect(ManagerText.contextWarning(.notSignedIn, context: .default(.claude), sharedWith: nil) == nil)
+        #expect(ManagerText.contextWarning(.signedIn(a), context: work, sharedWith: .default(.claude))
+            == ManagerText.contextStatus(.signedIn(a), context: work, sharedWith: .default(.claude)))
+        #expect(ManagerText.contextWarning(.signedIn(testLogin(.claude, "i", complete: false)), context: work, sharedWith: nil)
+            == "Signed in, but its account can't be read — saved Claude Code accounts aren't renewed meanwhile")
+        #expect(ManagerText.contextWarning(.notSignedIn, context: work, sharedWith: nil) == "Not signed in · CLAUDE_CONFIG_DIR must be exactly this path")
+        #expect(ManagerText.contextWarning(.unsupported("an API-key sign-in"), context: .default(.codex), sharedWith: nil)
+            == "Signed in with an API key, which Argus doesn't manage")
+        #expect(ManagerText.contextWarning(.unsupported("keyring"), context: .default(.codex), sharedWith: nil)
+            == "Unsupported storage mode — saved Codex accounts aren't renewed meanwhile")
+        #expect(ManagerText.contextWarning(.wiped, context: .default(.claude), sharedWith: nil) == "Signed out")
+    }
+
     // MARK: Hardening
 
     @Test func `REQ/F09-AC-9.c4 an account live in two contexts is fetched with the login lasting longest; each context syncs back into its own list`() async throws {

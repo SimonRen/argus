@@ -6,6 +6,14 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+### Changed
+
+- Manager window: contexts are grouped under their tool in the sidebar, each showing its tightest limit and which window it is.
+- Manager window: the accounts table has one meter per window; Refresh and Remove moved into a per-account menu.
+- Refresh interval, Launch at login and update options moved to a new Settings window (⌘,).
+- Adding a context is now a sheet opened from "+" in the sidebar; removing one is in that context's page menu.
+- Save results and notices appear as toasts instead of banners.
+
 ## [0.7.0] - 2026-11-13
 
 ### Added

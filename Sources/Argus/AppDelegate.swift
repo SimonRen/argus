@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: StatusItemController?
     private var commands: AccountCommands?
     private var manager: ManagerWindowController?
+    private var settings: SettingsWindowController?
 
     static func main() {
         let delegate = AppDelegate()
@@ -80,8 +81,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let preferences = MenuBarPreferences(defaults: .standard)
         let loginItem = LoginItemController(service: SMAppServiceLoginItem())
         let updater = Updater()
-        manager = ManagerWindowController(makeView: {
-            AnyView(ManagerView(state: state, commands: commands, preferences: preferences, loginItem: loginItem, updater: updater))
+        settings = SettingsWindowController(makeView: {
+            AnyView(SettingsView(state: state, commands: commands, loginItem: loginItem, updater: updater))
+        })
+        manager = ManagerWindowController(makeView: { [weak self] in
+            AnyView(ManagerView(state: state, commands: commands, preferences: preferences) { self?.showSettings(nil) })
         }, onClose: { commands.closeUndo() })
         let statusItem = StatusItemController(state: state, preferences: preferences)
         let screen = PopoverScreen()
@@ -112,12 +116,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc func showSettings(_ sender: Any?) {
+        settings?.show()
+    }
+
     private func openManager() {
         statusItem?.closePopover()
         manager?.show()
     }
 
-    /// The app menu: Quit, Close, Copy, Paste. An `.accessory` app draws no menu bar, but key equivalents still route here.
+    /// The app menu: Settings, Quit, Close, Copy, Paste. An `.accessory` app draws no menu bar, but key equivalents still route here.
     /// The app was Magpie Lite: its folder (the vault) moves over once, and its settings are copied where unset.
     private static func adoptFormerName(support: URL, supportRoot: URL) {
         let fm = FileManager.default
@@ -134,6 +142,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appItem = NSMenuItem()
         main.addItem(appItem)
         let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
+        appMenu.addItem(.separator())
         appMenu.addItem(
             withTitle: "Quit Argus",
             action: #selector(NSApplication.terminate(_:)),

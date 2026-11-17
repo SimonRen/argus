@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Argus settings window</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button{font:inherit;border:0;padding:0;margin:0;background:none;color:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 520px; height: 350px; box-sizing: border-box; display: flex; flex-direction: column; background: #1b1b1e; color: #f3f3f5; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, sans-serif; font-size: 13px; line-height: 1.35; overflow: hidden">
+
+<div style="height: 44px; flex: none; position: relative; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid rgba(255,255,255,0.08)">
+<div aria-hidden="true" style="position: absolute; left: 16px; top: 16px; display: flex; gap: 8px">
+<div style="width: 12px; height: 12px; border-radius: 50%; background: #ff5f57"></div>
+<div style="width: 12px; height: 12px; border-radius: 50%; background: #febc2e"></div>
+<div style="width: 12px; height: 12px; border-radius: 50%; background: #28c840"></div>
+</div>
+<h1 style="margin: 0; font-size: 13px; font-weight: 600">Settings</h1>
+</div>
+
+<div style="flex: 1; box-sizing: border-box; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px">
+
+<div style="display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; background: #232327">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 52px; padding: 0 12px 0 16px; border-bottom: 1px solid rgba(255,255,255,0.08)">
+<div id="lbl-interval" style="font-size: 13px; font-weight: 500">Refresh every</div>
+<div role="group" aria-labelledby="lbl-interval" style="display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: rgba(255,255,255,0.07)">
+<button aria-pressed="false" style="height: 26px; padding: 0 12px; border-radius: 6px; font-size: 12.5px; font-weight: 500; color: #b0b0b8">3 min</button>
+<button aria-pressed="true" style="height: 26px; padding: 0 12px; border-radius: 6px; font-size: 12.5px; font-weight: 600; color: #f3f3f5; background: rgba(255,255,255,0.16)">5 min</button>
+<button aria-pressed="false" style="height: 26px; padding: 0 12px; border-radius: 6px; font-size: 12.5px; font-weight: 500; color: #b0b0b8">10 min</button>
+</div>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 56px; padding: 0 16px">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div id="lbl-login" style="font-size: 13px; font-weight: 500">Launch at login</div>
+<div style="font-size: 11.5px; color: #9a9aa3">Argus needs to be in your Applications folder.</div>
+</div>
+<button role="switch" aria-checked="true" aria-labelledby="lbl-login" style="width: 36px; height: 22px; border-radius: 11px; background: #2a66d9; display: flex; align-items: center; justify-content: flex-end; padding: 2px; box-sizing: border-box; flex: none"><div style="width: 18px; height: 18px; border-radius: 50%; background: #ffffff"></div></button>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; background: #232327">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 52px; padding: 0 12px 0 16px; border-bottom: 1px solid rgba(255,255,255,0.08)">
+<div style="display: flex; align-items: baseline; gap: 8px">
+<div style="font-size: 13px; font-weight: 500">Argus</div>
+<div style="font-size: 12.5px; color: #9a9aa3; font-variant-numeric: tabular-nums">Version 0.7.0</div>
+</div>
+<button style="height: 28px; padding: 0 12px; border-radius: 7px; font-size: 12.5px; font-weight: 500; color: #f3f3f5; background: rgba(255,255,255,0.10)">Check for Updates…</button>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 48px; padding: 0 16px">
+<div id="lbl-auto" style="font-size: 13px; font-weight: 500">Check for updates automatically</div>
+<button role="switch" aria-checked="true" aria-labelledby="lbl-auto" style="width: 36px; height: 22px; border-radius: 11px; background: #2a66d9; display: flex; align-items: center; justify-content: flex-end; padding: 2px; box-sizing: border-box; flex: none"><div style="width: 18px; height: 18px; border-radius: 50%; background: #ffffff"></div></button>
+</div>
+</div>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":520,"height":350}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

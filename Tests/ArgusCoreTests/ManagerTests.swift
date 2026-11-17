@@ -163,24 +163,31 @@ import ArgusCore
 
     // MARK: F07-AC-7.c7
 
-    @Test func `REQ/F07-AC-7.c7 Show in menubar changes the status item and the sidebar glyph at once`() async throws {
+    @Test func `REQ/F07-AC-7.c7 Show in menubar changes the status item at once and the sidebar keeps its tightest window`() async throws {
         let rig = try PollerRig(live: [.claude: [.signedIn(testLogin(.claude, "a"))]])
         await rig.poller.runBatch()
         let prefs = MenuBarPreferences(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let snapshot = rig.state.snapshot(.default(.claude))
         #expect(MenuBarSummary.build([snapshot], isShown: prefs.isShown).segments.count == 1)
-        #expect(ManagerSidebarRow.build(snapshot, isShown: prefs.isShown(.default(.claude))).showsMenubarGlyph)
         prefs.setShown(.default(.claude), false)
         #expect(MenuBarSummary.build([snapshot], isShown: prefs.isShown).showsGlyphOnly)
-        let row = ManagerSidebarRow.build(snapshot, isShown: prefs.isShown(.default(.claude)))
-        #expect(!row.showsMenubarGlyph)
-        #expect(row.liveEmail == "a@example.com" && row.fiveHour.text == "10%" && row.sevenDay.text == "20%")
+        let row = ManagerSidebarRow.build(snapshot)
+        #expect(row.liveEmail == "a@example.com" && row.tightest?.percentText == "20%" && row.tightest?.label == "7d")
     }
 
-    @Test func `a sidebar row without a live login shows dashes`() {
+    @Test func `a sidebar row without a live login, or without a reading, has no tightest window`() async throws {
         let snapshot = ToolSnapshot(tool: .codex, live: .notSignedIn, accounts: [], rateLimitedUntil: nil)
-        let row = ManagerSidebarRow.build(snapshot, isShown: true)
-        #expect(row.liveEmail == nil && row.fiveHour.text == "—" && row.sevenDay.text == "—")
+        let row = ManagerSidebarRow.build(snapshot)
+        #expect(row.liveEmail == nil && row.tightest == nil)
+        let unread = ToolSnapshot(tool: .codex, live: .signedIn(testLogin(.codex, "x")), accounts: [], rateLimitedUntil: nil)
+        #expect(ManagerSidebarRow.build(unread).liveEmail == "x@example.com" && ManagerSidebarRow.build(unread).tightest == nil)
+    }
+
+    @Test func `a table column is titled by its window`() {
+        #expect(ManagerText.columnTitle("5h") == "5-hour used")
+        #expect(ManagerText.columnTitle("7d") == "7-day used")
+        #expect(ManagerText.columnTitle("Fable 7d") == "Fable 7-day used")
+        #expect(ManagerText.columnTitle("Argon 5h") == "Argon 5-hour used")
     }
 
     // MARK: F07-AC-7.c8
@@ -197,8 +204,7 @@ import ArgusCore
 
     // MARK: F07-AC-7.c9
 
-    @Test func `REQ/F07-AC-7.c9 a tool without saved accounts shows the empty state`() {
-        #expect(ManagerText.emptyTitle == "No saved accounts")
+    @Test func `REQ/F07-AC-7.c9 the table ends with how to add an account`() {
         #expect(ManagerText.emptyHint(.codex) == "Sign in with Codex as usual, then choose Save current login to keep it here.")
         #expect(ManagerText.emptyHint(.agy) == "Sign in with Antigravity CLI as usual, then choose Save current login to keep it here.")
     }
@@ -211,5 +217,7 @@ import ArgusCore
         #expect(ManagerText.header(rig.state.snapshot(.default(.claude))) == "Signed in as a@example.com")
         #expect(ManagerText.header(rig.state.snapshot(.default(.codex))) == "Signed in as x@example.com — not saved")
         #expect(ManagerText.header(rig.state.snapshot(.default(.agy))) == "Not signed in")
+        #expect(!ManagerText.isUnsaved(rig.state.snapshot(.default(.claude))) && ManagerText.isUnsaved(rig.state.snapshot(.default(.codex))))
+        #expect(!ManagerText.isUnsaved(rig.state.snapshot(.default(.agy))))
     }
 }
