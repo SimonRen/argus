@@ -6,6 +6,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-17
+
 ### Changed
 
 - Manager window: contexts are grouped under their tool in the sidebar, each showing its tightest limit and which window it is.
