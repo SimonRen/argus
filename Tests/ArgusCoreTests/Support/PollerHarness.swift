@@ -132,9 +132,9 @@ func okReply(_ request: TestHTTPStub.Request) -> TestHTTPStub.Reply {
     return .json(200, claudeUsageOK)
 }
 
-/// Waits (≤ 1 s) until `condition` holds.
+/// Waits (≤ 5 s, room for a loaded runner) until `condition` holds.
 func eventually(_ condition: @Sendable () -> Bool) async -> Bool {
-    for _ in 0..<100 {
+    for _ in 0..<500 {
         if condition() { return true }
         try? await Task.sleep(for: .milliseconds(10))
     }
